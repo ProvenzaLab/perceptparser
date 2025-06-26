@@ -1,0 +1,14 @@
+[project]
+name = "my-parser-scripts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.3",
+    "mne>=1.9.0",
+    "numpy>=2.3.0",
+    "pynwb>=3.0.0",
+    "scipy>=1.15.3",
+    "tqdm>=4.67.1",
+]
