@@ -1,6 +1,5 @@
 from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
-from percept import PerceptParser
 import pandas as pd
 import numpy as np
 from scipy import signal
@@ -10,7 +9,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import mne
 
 
-def brain_sense_lfp_plot(df: pd.DataFrame, parser: PerceptParser, out_path: str, quantile: float = 0.99):
+def brain_sense_lfp_plot(df: pd.DataFrame, parser, out_path: str, quantile: float = 0.99):
     df = df
     parser = parser
     out_path = out_path
@@ -50,7 +49,7 @@ def brain_sense_lfp_plot(df: pd.DataFrame, parser: PerceptParser, out_path: str,
     plt.savefig(f"{out_path}/lfp_power_plot.pdf")
     plt.close()
 
-def lfptrendlog_plot(df_trend_logs: pd.DataFrame, parser: PerceptParser, path_out: str):
+def lfptrendlog_plot(df_trend_logs: pd.DataFrame, parser, path_out: str):
     df_trend_logs = df_trend_logs
     parser = parser
     path_out = path_out
@@ -70,7 +69,7 @@ def lfptrendlog_plot(df_trend_logs: pd.DataFrame, parser: PerceptParser, path_ou
     plt.savefig(f"{path_out}/lfp_trend_logs_plot.pdf")
     plt.close()
 
-def brainsense_timedomain_plot(df_bs_td: pd.DataFrame, parser: PerceptParser, out_path: str, indefinite_streaming: bool = False):
+def brainsense_timedomain_plot(df_bs_td: pd.DataFrame, parser, out_path: str, indefinite_streaming: bool = False):
     ch_names = list(df_bs_td.columns)
 
     plt.figure(figsize=(15, 5))
@@ -192,30 +191,66 @@ def brainsense_timedomain_plot(df_bs_td: pd.DataFrame, parser: PerceptParser, ou
     plt.savefig(f"{out_path}/brainsense_time_domain_psd.pdf")
     plt.close()
 
+def time_frequency_plot_td(df_bs_td: pd.DataFrame, indefinite_streaming: bool, parser, out_path: str):
+    
+    if "idx_counter" in df_bs_td.columns:
+        df_bs_td = df_bs_td.drop(columns=["idx_counter"])
+
+    ch_names = list(df_bs_td.columns)
+    
+    if indefinite_streaming is False:
+        str_prefix = "bstd_"
+    else:
+        str_prefix = "istd_"
+
     if indefinite_streaming is True:
         plt.figure(figsize=(15, 15),)
     else:
         plt.figure(figsize=(15, 7),)
+
     for ch_idx, ch in enumerate(ch_names):
         if indefinite_streaming:
             plt.subplot(len(ch_names) // 2, 2 , ch_idx + 1)
         else:
             plt.subplot(1, len(ch_names), ch_idx + 1)
-        Pxx_l = Pxx_chs_[ch_idx]
-        t_bin_l = t_bins_chs_[ch_idx]
+        
+        df_ = df_bs_td[ch]
+        # chunk data up in 10 s intervals
+        t_bins_10s = pd.date_range(start=df_.index[0], end=df_.index[-1], freq='10S')
+        df_chunks = [df_.loc[t_bins_10s[i]:t_bins_10s[i + 1]] for i in range(len(t_bins_10s) - 1)]
 
-        Pxx_arr = np.array(Pxx_l)
+        Pxx_chs_ = []
+        t_bins_chs_ = []
+        for df_chunk in df_chunks:
+            if df_chunk.isnull().all():
+                print(f"{ch}: No valid data in chunk")
+                continue
+
+            # Compute PSD
+            f, Pxx_den = signal.welch(df_chunk.fillna(0), fs=250, nperseg=256)
+
+            # Store the PSD and time bin
+            Pxx_chs_.append(Pxx_den)
+            t_bins_chs_.append(df_chunk.index[0])
+        if len(Pxx_chs_) == 0:
+            print(f"{ch}: No valid data for PSD")
+            continue
+        Pxx_arr = np.array(Pxx_chs_)
         Pxx_log = np.log(Pxx_arr + 1e-12)  # To avoid log(0)
 
+
+        t_num = mdates.date2num(t_bins_chs_)
+        extent = [t_num[0], t_num[-1], f[0], f[-1]]
+
         plt.imshow(Pxx_log.T, aspect='auto', origin='lower',
-                    extent=[mdates.date2num(t_bin_l[0]), mdates.date2num(t_bin_l[-1]), f[0], f[-1]],
+                    extent=extent,
                     cmap='viridis', interpolation='none')
 
         plt.colorbar(label='log(PSD)')
         plt.xlabel('Time')
         plt.ylabel('Frequency (Hz)')
         plt.title(f'{ch}')
-
+        plt.clim(-7.5, 4)
         # Format x-axis as dates
         ax = plt.gca()
         ax.xaxis_date()
@@ -226,7 +261,10 @@ def brainsense_timedomain_plot(df_bs_td: pd.DataFrame, parser: PerceptParser, ou
                 f"{df_bs_td.index[0].strftime('%Y-%m-%d %H:%M:%S')} - {df_bs_td.index[-1].strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"LeadLocation: {parser.lead_location}, LeadModel: {parser.lead_model}")
     plt.tight_layout()
-    plt.savefig(f"{out_path}/brainsense_time_domain_tf.pdf")
+    start_idx = df_bs_td.index[0]
+    end_idx = df_bs_td.index[-1]
+    str_postfix = f"{start_idx.strftime('%Y%m%d_%H%M%S')}_{end_idx.strftime('%Y%m%d_%H%M%S')}"
+    plt.savefig(f"{out_path}/time_domain_tf_{str_prefix}{str_postfix}.pdf")
     plt.close()
 
 def plot_time_domain_ranges(dfs_: list[pd.DataFrame], out_path: str):
@@ -250,12 +288,17 @@ def plot_time_domain_ranges(dfs_: list[pd.DataFrame], out_path: str):
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Intervals", fontsize="small")
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
     plt.savefig(f"{out_path}/time_domain_ranges.pdf")
+    plt.close()
 
-def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str):
+def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedomain: bool = True):
     #df_plt = dfs_[15]
-    pdf_path = f"{out_path}/is_{df_plt.index[0]}_{df_plt.index[-1]}.pdf"
+    if brain_sense_timedomain:
+        str_prefix = "bstd_"
+    else:
+        str_prefix = "istd_"
+    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0]}_{df_plt.index[-1]}.pdf"
     pdf_ = PdfPages(pdf_path)
     TIME_INTERVAL = 10
     samples = 250 * TIME_INTERVAL

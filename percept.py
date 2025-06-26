@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
+import plotter
+import os
 
 class PerceptParser:
 
@@ -15,8 +17,44 @@ class PerceptParser:
         self.session_date = datetime.strptime(self.js['SessionDate'], '%Y-%m-%dT%H:%M:%SZ')
         self.lead_location = self.js['LeadConfiguration']['Final'][0]['LeadLocation'].split('.')[-1].upper()
         self.lead_model = self.js['LeadConfiguration']['Final'][0]['Model'].split('.')[-1].upper()
-        self.subject = None ## self.js['Subject']['SubjectId'] if 'Subject' in self.js else None
+        self.subject = self.js["PatientInformation"]["Final"]["PatientId"]
+        self.diagnosis = self.js["PatientInformation"]["Final"]["Diagnosis"]
         print(f"{filename}: {self.session_date} - {self.lead_location}")
+
+    def parse_all(self, out_path: str = "sub"):
+
+        os.makedirs(out_path, exist_ok=True)
+
+        df_lfp_trend_logs = self.parse_lfp_trend_logs()
+        df_brainsense_lfp = self.parse_brain_sense_lfp()
+        dfs_bs_td = self.read_timedomain_data(indefinite_streaming=False)
+        dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
+
+        if df_lfp_trend_logs.empty is False:
+            df_lfp_trend_logs.to_csv(os.path.join(out_path, "LFPTrendLogs.csv"), index=True)
+            plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
+        
+        if df_brainsense_lfp.empty is False:
+            df_brainsense_lfp.to_csv(os.path.join(out_path, "BrainSenseLfp.csv"), index=True)
+            plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
+        
+        if len(dfs_bs_td) > 0:
+            plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
+            for _, df_bs_td_i in tqdm(list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"):
+                str_idx = df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S") + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
+                df_bs_td_i.to_csv(os.path.join(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"), index=True)
+                plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
+                plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=False, parser=self, out_path=out_path)
+        
+        if len(dfs_is_td) > 0:
+            plotter.plot_time_domain_ranges(dfs_is_td, out_path=out_path)
+            for _, df_is_td_i in tqdm(list(enumerate(dfs_is_td)), desc="IndefiniteStreaming Plot Index"):
+                str_idx = df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S") + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
+                df_is_td_i.to_csv(os.path.join(out_path, f"IndefiniteStreaming_{str_idx}.csv"), index=True)
+                plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
+                plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=True, parser=self, out_path=out_path)
+
+        
 
     def parse_lfp_trend_logs(self, ):
         df_idx = []
@@ -188,14 +226,14 @@ class PerceptParser:
             str_timedomain = "BrainSenseTimeDomain"
         if str_timedomain not in self.js:
             print(f"No {str_timedomain} found in the JSON file.")
-            return pd.DataFrame()
+            return []
 
         FirstPackageDateTimes = np.array([self.js[str_timedomain][index_]['FirstPacketDateTime'] 
                                           for index_ in range(len(self.js[str_timedomain]))])
         num_chs = np.where(FirstPackageDateTimes == FirstPackageDateTimes[0])[0].shape[0]
 
         df_ = []
-        for package_idx, first_package in tqdm(enumerate(np.unique(FirstPackageDateTimes)),
+        for package_idx, first_package in tqdm(list(enumerate(np.unique(FirstPackageDateTimes))),
                                                desc=f"{str_timedomain} Index"):
             df_counts_sum = []
             df_chs = []
