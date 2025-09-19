@@ -18,3 +18,5 @@ pre_*
 main_testbench.py
 read_nwb_file.py
 .DS_Store
+*.pdf
+

@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "austin-dist>=3.7.0",
+    "fastparquet>=2024.11.0",
     "matplotlib>=3.10.3",
     "mne>=1.9.0",
     "numpy>=2.3.0",
