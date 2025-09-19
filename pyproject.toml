@@ -14,5 +14,3 @@ dependencies = [
     "scipy>=1.15.3",
     "tqdm>=4.67.1",
 ]
-[tool.setuptools]
-packages = ["my_parser_scripts"]
