@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
-import plotter
+from percept_parser import plotter
 import os
 
 class PerceptParser:
