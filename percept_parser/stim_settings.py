@@ -3,48 +3,196 @@ import json
 import warnings
 import pandas as pd
 from tqdm import tqdm
-from typing import Optional
+
 
 @dataclass
 class StimGroupSetting:
-    start_time: pd.Timestamp # Session start time
-    end_time: pd.Timestamp # Session end time
-    hem: str # Hemisphere location
-    state: str # Either "Initial" or "Final"
-    group_name: str # Group ID
-    is_active: bool # Whether this group is active
-    filename: str # Filename of the settings file
-    frequency: int # Stim rate in Hz
-    stim_cathode: list[str] # List of stim cathodes
-    stim_anode: list[str] # List of stim anodes
-    sensing_contacts: str # Sensing contact
-    pulse_width: int # Pulse width in microseconds
-    suspend_amplitude: int # Suspend amplitude in milliamps
-    sensing_frequency: float # Sensing frequency in Hz (float) 
-    lower_amplitude: Optional[int] = None # Lower bound amplitude in milliamps (int)
-    upper_amplitude: Optional[int] = None  # Upper bound amplitude in milliamps (int)
+    start_time: pd.Timestamp  # Session start time
+    end_time: pd.Timestamp  # Session end time
+    hem: str  # Hemisphere location
+    state: str  # Either "Initial" or "Final"
+    group_name: str  # Group ID
+    is_active: bool  # Whether this group is active
+    filename: str  # Filename of the settings file
+    frequency: int  # Stim rate in Hz
+    stim_cathode: list[str]  # List of stim cathodes
+    stim_anode: list[str]  # List of stim anodes
+    sensing_contacts: str | None  # Sensing contact
+    pulse_width: int  # Pulse width in microseconds
+    suspend_amplitude: int  # Suspend amplitude in milliamps
+    sensing_frequency: float  # Sensing frequency in Hz (float)
+    lower_amplitude: int | None  # Lower bound amplitude in milliamps (int)
+    upper_amplitude: int | None  # Upper bound amplitude in milliamps (int)
 
     def __eq__(self, other):
         if not isinstance(other, StimGroupSetting):
             return False
         fields_to_compare = [
-            'hem', 'frequency', 'stim_cathodes', 'stim_anodes', 
-            'sensing_contacts', 'pulse_width', 'suspend_amplitude',
-            'sensing_frequency', 'lower_amplitude', 'upper_amplitude'
+            "hem",
+            "frequency",
+            "stim_cathodes",
+            "stim_anodes",
+            "sensing_contacts",
+            "pulse_width",
+            "suspend_amplitude",
+            "sensing_frequency",
+            "lower_amplitude",
+            "upper_amplitude",
         ]
-        return all(getattr(self, field) == getattr(other, field) for field in fields_to_compare)
+        return all(
+            getattr(self, field) == getattr(other, field) for field in fields_to_compare
+        )
 
-def get_group_settings_from_file(filename):
-    with open(filename, 'r') as f:
-        data = json.load(f)
-    return data
+
+@dataclass
+class StimGroupSettingCollection:
+    settings = list[dict]
+
+    def add_setting(self, setting: StimGroupSetting):
+        self.settings.append(setting)
+
+    def get_settings_at_time(
+        self, query_ts: pd.Timestamp
+    ) -> tuple[StimGroupSetting, StimGroupSetting, bool]:
+        """
+        Get the settings for the current group at a specific timestamp.
+
+        Parameters:
+        - query_ts (pd.Timestamp): The timestamp to query.
+
+        Returns:
+        - StimGroupSetting: Settings for current group in the left hemisphere at the specified time.
+        - StimGroupSetting: Settings for current group in the right hemisphere at the specified time.
+        - bool: Whether the current time is during a session. If True, the current settings are technically unknown.
+        """
+        ... # TODO
+
+
+def get_group_settings_from_js(filename: str, data: dict) -> StimGroupSettingCollection:
+    # Note: I'm not doing any location check, I'm taking groups from any location
+
+    start_time = pd.Timestamp(data["DeviceInformation"]["Initial"]["DeviceDateTime"])
+    end_time = pd.Timestamp(data["DeviceInformation"]["Final"]["DeviceDateTime"])
+    # interval = Interval(start_time, end_time)
+
+    file_settings = []
+
+    # Can 
+    for state in ["Initial", "Final"]:
+        for group in data["Groups"][state]:
+            group_name = group["GroupId"].removeprefix("GroupIdDef.")
+            isactive = group["ActiveGroup"]
+            program_settings = group["ProgramSettings"]
+
+            for channel in program_settings.get("SensingChannel", []):
+                # The original code had a try except here, skipping channels
+                # that missed some of these keys, but others had defaults.
+                # Which keys should we consider mandatory for a valid channel?
+
+                hemname = channel["HemisphereLocation"].removeprefix(
+                    "HemisphereLocationDef."
+                )
+
+                # These have defaults so they can be missing apparently
+                freq = channel.get("RateInHertz", program_settings["RateInHertz"])
+                lower_amp = channel.get("LowerAmplitudeInMilliAmps", None)
+                upper_amp = channel.get("UpperAmplitudeInMilliAmps", None)
+
+                # However if these are missing, the group is bad?
+                suspend_amp = channel["SuspendAmplitudeInMilliAmps"]
+                pw = channel["PulseWidthInMicroSecond"]
+
+                stim_cathodes = [
+                    electrode["Electrode"].removeprefix("ElectrodeDef.")
+                    for electrode in channel["ElectrodeState"]
+                    if electrode["ElectrodeStateResult"] == "ElectrodeStateDef.Negative"
+                ]
+                stim_anodes = [
+                    electrode["Electrode"].removeprefix("ElectrodeDef.")
+                    for electrode in channel["ElectrodeState"]
+                    if electrode["ElectrodeStateResult"] == "ElectrodeStateDef.Positive"
+                ]
+
+                sensing_contacts = channel["Channel"].removeprefix(
+                    "SensingElectrodeConfigDef."
+                )
+
+                sensing_freq = channel.get("SensingSetup", {}).get("FrequencyInHertz")
+
+                group_setting = StimGroupSetting(
+                    start_time=start_time,
+                    end_time=end_time,
+                    hem=hemname,
+                    state=state,
+                    group_name=group_name,
+                    is_active=isactive,
+                    filename=filename,
+                    frequency=freq,
+                    stim_cathode=stim_cathodes,
+                    stim_anode=stim_anodes,
+                    sensing_contacts=sensing_contacts,
+                    pulse_width=pw,
+                    suspend_amplitude=suspend_amp,
+                    sensing_frequency=sensing_freq,
+                    lower_amplitude=lower_amp,
+                    upper_amplitude=upper_amp,
+                )
+
+                file_settings.append(group_setting)
+
+            # Check for hemisphere specific settings
+            for hem in [
+                h for h in ["Right", "Left"] if f"{h}Hemisphere" in program_settings
+            ]:
+                hem_settings = program_settings[f"{hem}Hemisphere"]["Programs"][0]
+
+                freq = hem_settings.get("RateInHertz", program_settings["RateInHertz"])
+
+                stim_cathodes = [
+                    electrode["Electrode"].removeprefix("ElectrodeDef.")
+                    for electrode in hem_settings["ElectrodeState"]
+                    if electrode["ElectrodeStateResult"] == "ElectrodeStateDef.Negative"
+                ]
+                stim_anodes = [
+                    electrode["Electrode"].removeprefix("ElectrodeDef.")
+                    for electrode in hem_settings["ElectrodeState"]
+                    if electrode["ElectrodeStateResult"] == "ElectrodeStateDef.Positive"
+                ]
+
+                sensing_freq = (
+                    program_settings.get(f"{hem}Hemisphere", {})
+                    .get("SensingSetup", {})
+                    .get("FrequencyInHertz")
+                )
+
+                group_setting = StimGroupSetting(
+                    start_time=start_time,
+                    end_time=end_time,
+                    hem=hem,
+                    state=state,
+                    group_name=group_name,
+                    is_active=True,
+                    filename=filename,
+                    frequency=freq,
+                    stim_cathode=stim_cathodes,
+                    stim_anode=stim_anodes,
+                    sensing_contacts=None,
+                    pulse_width=hem_settings["PulseWidthInMicroSecond"],
+                    suspend_amplitude=hem_settings["AmplitudeInMilliAmps"],
+                    sensing_frequency=sensing_freq,
+                    lower_amplitude=hem_settings.get("LowerAmplitudeInMilliAmps", None),
+                    upper_amplitude=hem_settings.get("UpperAmplitudeInMilliAmps", None),
+                )
+                file_settings.append(group_setting)
+
+    return file_settings
 
 
 @dataclass(frozen=True, order=True)
 class Interval:
     start: pd.Timestamp
     end: pd.Timestamp
-    
+
     def overlaps(self, other):
         return self.start < other.end and self.end > other.start
 
@@ -99,7 +247,9 @@ class PatientStimSettingHistory:
                         f" ({setting.filename} to {session2_settings[0].filename})."
                     )
 
-    def get_session_by_end_time(self, end_time: pd.Timestamp) -> StimGroupSetting | None:
+    def get_session_by_end_time(
+        self, end_time: pd.Timestamp
+    ) -> StimGroupSetting | None:
         """
         Get the session that ends at the specified end time.
 

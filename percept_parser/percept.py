@@ -6,10 +6,12 @@ from tqdm import tqdm
 
 # from percept_parser import plotter
 from pathlib import Path
+from .stim_settings import StimGroupSetting, get_group_settings_from_js
 
 
 class PerceptParser:
     def __init__(self, filename: str, verbose: bool = False):
+        self.filename = filename
         self.verbose = verbose
 
         with open(filename, "r") as f:
@@ -19,18 +21,23 @@ class PerceptParser:
 
         self.lead_location = (
             self.js["LeadConfiguration"]["Final"][0]["LeadLocation"]
-            .split(".")[-1]
+            .removeprefix("LeadLocationDef.")
             .upper()
         )
 
         self.lead_model = (
-            self.js["LeadConfiguration"]["Final"][0]["Model"].split(".")[-1].upper()
+            self.js["LeadConfiguration"]["Final"][0]["Model"]
+            .removeprefix("LeadModelDef.")
+            .upper()
         )
 
         self.subject = self.js["PatientInformation"]["Final"]["PatientId"]
         self.diagnosis = self.js["PatientInformation"]["Final"]["Diagnosis"]
 
+        self.stim_settings = get_group_settings_from_js(filename, self.js)
+
         print(f"{filename}: {self.session_date} - {self.lead_location}")
+        print(self.stim_settings)
 
     def parse_all(self, out_path: str = "sub"):
         Path.mkdir(Path(out_path), exist_ok=True)
@@ -144,14 +151,11 @@ class PerceptParser:
             # Discard TicksInMses
             df_idx.append(df_stream.drop(columns=["TicksInMses"]))
 
-        df = (
-            pd.concat(df_idx, ignore_index=True)
-            .set_index("Time")
-            .sort_index()
+        return (
+            pd.concat(df_idx, ignore_index=True).set_index("Time").sort_index()
             # .resample(f"{1 / sfreq:.6f}S")
             # .mean()
         )
-        return df
 
     def get_time_stream(
         self, js_td: dict, num_chs: int, verbose: bool = False
