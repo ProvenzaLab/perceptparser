@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
+import warnings
 
-# from percept_parser import plotter
 from pathlib import Path
-from .stim_settings import StimGroupSetting, get_group_settings_from_js
+from .stim_settings import FileStimGroupSettings
 
 
 class PerceptParser:
@@ -34,58 +34,96 @@ class PerceptParser:
         self.subject = self.js["PatientInformation"]["Final"]["PatientId"]
         self.diagnosis = self.js["PatientInformation"]["Final"]["Diagnosis"]
 
-        self.stim_settings = get_group_settings_from_js(filename, self.js)
+        self.stim_settings = FileStimGroupSettings(self.js, self.filename)
 
         print(f"{filename}: {self.session_date} - {self.lead_location}")
-        print(self.stim_settings)
 
-    def parse_all(self, out_path: str = "sub"):
+    def parse_all(self, out_path: str = "sub", plot: bool = False):
+        if plot:
+            from percept_parser import plotter
+
         Path.mkdir(Path(out_path), exist_ok=True)
 
-        # df_lfp_trend_logs = self.parse_lfp_trend_logs()
+        df_lfp_trend_logs = self.parse_lfp_trend_logs()
         df_brainsense_lfp = self.parse_brain_sense_lfp()
-        # dfs_bs_td = self.read_timedomain_data(indefinite_streaming=False)
-        # dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
 
-        # if not df_lfp_trend_logs.empty:
-        #     df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
-        #     # plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
+        dfs_bs_td = self.read_timedomain_data(indefinite_streaming=False)
+        dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
 
+        if not df_lfp_trend_logs.empty:
+            df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
+            df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
+            if plot:
+                plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
+
+    
         if not df_brainsense_lfp.empty:
+            df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
             df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
-            # plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
+            if plot:
+                plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
 
-        # if len(dfs_bs_td) > 0:
-        #     # plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
-        #     for _, df_bs_td_i in tqdm(
-        #         list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"
-        #     ):
-        #         str_idx = (
-        #             df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-        #             + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
-        #         )
-        #         df_bs_td_i.to_csv(
-        #             os.path.join(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
-        #             index=True,
-        #         )
-        #         # plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
-        #         # plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=False, parser=self, out_path=out_path)
+        if len(dfs_bs_td) > 0:
+            # plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
+            for _, df_bs_td_i in tqdm(
+                list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"
+            ):
+                str_idx = (
+                    df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
+                    + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
+                )
+                df_bs_td_i.to_csv(
+                    Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
+                    index=True,
+                )
+                # plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
+                # plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=False, parser=self, out_path=out_path)
 
-        # if len(dfs_is_td) > 0:
-        #     # plotter.plot_time_domain_ranges(dfs_is_td, out_path=out_path)
-        #     for _, df_is_td_i in tqdm(
-        #         list(enumerate(dfs_is_td)), desc="IndefiniteStreaming Plot Index"
-        #     ):
-        #         str_idx = (
-        #             df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-        #             + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
-        #         )
-        #         df_is_td_i.to_csv(
-        #             os.path.join(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
-        #             index=True,
-        #         )
-        #         # plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
-        #         # plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=True, parser=self, out_path=out_path)
+        if len(dfs_is_td) > 0:
+            if plot:
+                plotter.plot_time_domain_ranges(dfs_is_td, out_path=out_path)
+            for _, df_is_td_i in tqdm(
+                list(enumerate(dfs_is_td)), desc="IndefiniteStreaming Plot Index"
+            ):
+                str_idx = (
+                    df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
+                    + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
+                )
+                df_is_td_i.to_csv(
+                    Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
+                    index=True,
+                )
+                if plot:
+                    plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
+                    plotter.time_frequency_plot_td(
+                        df_bs_td_i,
+                        indefinite_streaming=True,
+                        parser=self,
+                        out_path=out_path,
+                    )
+
+    def _merge_stim_settings(self, samples) -> pd.DataFrame:
+        samples_with_time = samples.reset_index()
+
+        # Merge asof backwards will perform a left join, matching each sample with the most
+        # recent stim settings that started before sample time.
+        merged = pd.merge_asof(
+            samples_with_time.sort_values("Time"),
+            self.stim_settings.groups_settings,
+            left_on="Time",
+            right_on="start_time",
+            direction="backward",
+        )
+
+        # Sanity check: if groups don't overlap, all samples should be within start_time and end_time
+        if not (merged["Time"] < merged["end_time"]).all():
+            warnings.warn(
+                "Some sample timestamps are outside the group settings time intervals."
+                "Check for overlapping groups."
+            )
+
+        # Drop uninsteresting columns
+        return merged.set_index("Time").drop(columns=["start_time", "end_time", "filename"])
 
     def parse_lfp_trend_logs(
         self,
@@ -94,10 +132,12 @@ class PerceptParser:
             print("No LFPTrendLogs found in the JSON file.")
             return pd.DataFrame()
 
-        LFPTrendLogs = self.js["DiagnosticData"]["LFPTrendLogs"]
+        # This is out-of-clinic data, recorded between visits
 
         # There is a group per each 24h, each group indexed by its first datetime
         # Each group has a timepoint for every 10 minutes
+
+        LFPTrendLogs = self.js["DiagnosticData"]["LFPTrendLogs"]
         df = pd.DataFrame(
             [
                 {
@@ -122,7 +162,9 @@ class PerceptParser:
             print("No BrainSenseLfp found in the JSON file.")
             return pd.DataFrame()
 
-        # According to the docs, each time the user presses "Start streaming", a new collection
+        # This is per session data, not out of clinic
+
+        # According to the docs, each time the clinician presses "Start streaming", a new collection
         # of samples is created and they call it "Streaming Sample". I call it "stream" here
         # to avoid confusion with each "sample" within a stream.
 

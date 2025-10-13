@@ -4,7 +4,6 @@ import warnings
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
-from enum import StrEnum, auto
 
 
 @dataclass
@@ -12,7 +11,7 @@ class StimGroupSetting:
     start_time: pd.Timestamp  # Session start time
     end_time: pd.Timestamp  # Session end time
     hem: str  # Hemisphere location
-    state: str  # Either "Initial" or "Final"
+    # state: str  # Either "Initial" or "Final"
     group_name: str  # Group ID
     is_active: bool  # Whether this group is active
     filename: str  # Filename of the settings file
@@ -102,8 +101,6 @@ class FileStimGroupSettings:
         )
 
         # Get Initial and Final group settings, maybe for consistency check?
-        # Start time and end time don't really make sense here, as they relate to device
-        # and not the group.
         self.initial_settings = pd.DataFrame(
             [
                 settings
@@ -118,28 +115,33 @@ class FileStimGroupSettings:
                 for settings in self._process_group(group)
             ]
         )
-        self.initial_settings["state"] = "Initial"
-        self.final_settings["state"] = "Final"
+        # Start time makes sense for the initial settings, but not really needed either
+        self.initial_settings["start_time"] = self.start_time
+        # In case we wanted them in the same dataframe
+        # self.initial_settings["state"] = "Initial"
+        # self.final_settings["state"] = "Final"
 
-        groups_settings = []
+        settings_list = []
 
         # Now get groups from GroupHistory
         # Assuming descending chronological order (0 is most recent)
-        previous_timestamp = pd.Timestamp.max
-        for session in reversed(data["GroupHistory"]):
+        previous_timestamp = pd.Timestamp.max.tz_localize("UTC")
+        for session in data["GroupHistory"]:
             session_date = pd.Timestamp(session["SessionDate"])
             for group in session["Groups"]:
-                group_settings = self._process_group(group)
+                group_settings: list[StimGroupSetting] = self._process_group(group)
                 for setting in group_settings:
                     setting.start_time = session_date
                     setting.end_time = previous_timestamp
-                    groups_settings.append(setting)
+                    settings_list.append(setting)
             previous_timestamp = session_date
 
-        self.groups_settings = pd.DataFrame(groups_settings)
+        self.groups_settings = (
+            pd.DataFrame(settings_list).sort_values("start_time").reset_index(drop=True)
+        )
 
-    def _process_group(self, group: dict) -> list[dict]:
-        settings = []
+    def _process_group(self, group: dict) -> list[StimGroupSetting]:
+        group_settings_list: list[StimGroupSetting] = []
 
         # Group Id is always present
         group_name = group["GroupId"].removeprefix("GroupIdDef.")
@@ -190,10 +192,10 @@ class FileStimGroupSettings:
             sensing_freq = channel.get("SensingSetup", {}).get("FrequencyInHertz")
 
             group_setting = StimGroupSetting(
-                start_time=pd.Timestamp.min,  # Placeholder
-                end_time=pd.Timestamp.max,  # Placeholder
+                start_time=pd.Timestamp.min.tz_localize('UTC'),
+                end_time=pd.Timestamp.max.tz_localize('UTC'),
                 hem=hemname,
-                state="unknown",
+                # state="unknown",  # Placeholder
                 group_name=group_name,
                 is_active=isactive,
                 filename=self.filename,
@@ -208,12 +210,13 @@ class FileStimGroupSettings:
                 upper_amplitude=upper_amp,
             )
 
-            settings.append(group_setting)
+            group_settings_list.append(group_setting)
 
         # Check for hemisphere specific settings
-        for hem in [
-            h for h in ["Right", "Left"] if f"{h}Hemisphere" in program_settings
-        ]:
+        for hem in ["Right", "Left"]:
+            if f"{hem}Hemisphere" not in program_settings:
+                continue
+
             hem_settings = program_settings[f"{hem}Hemisphere"]["Programs"][0]
 
             freq = hem_settings.get("RateInHertz", program_settings["RateInHertz"])
@@ -223,6 +226,7 @@ class FileStimGroupSettings:
                 for electrode in hem_settings["ElectrodeState"]
                 if electrode["ElectrodeStateResult"] == "ElectrodeStateDef.Negative"
             ]
+
             stim_anodes = [
                 electrode["Electrode"].removeprefix("ElectrodeDef.")
                 for electrode in hem_settings["ElectrodeState"]
@@ -236,10 +240,10 @@ class FileStimGroupSettings:
             )
 
             group_setting = StimGroupSetting(
-                start_time=pd.Timestamp.min,  # Placeholder
-                end_time=pd.Timestamp.max,  # Placeholderrnally
+                start_time=pd.Timestamp.min.tz_localize('UTC'),
+                end_time=pd.Timestamp.max.tz_localize('UTC'),
                 hem=hem,
-                state="Unknown",
+                # state="Unknown",  # Placeholder
                 group_name=group_name,
                 is_active=True,
                 filename=self.filename,
@@ -253,9 +257,9 @@ class FileStimGroupSettings:
                 lower_amplitude=hem_settings.get("LowerAmplitudeInMilliAmps", None),
                 upper_amplitude=hem_settings.get("UpperAmplitudeInMilliAmps", None),
             )
-            settings.append(group_setting)
+            group_settings_list.append(group_setting)
 
-        return settings
+        return group_settings_list
 
 
 @dataclass(frozen=True, order=True)
