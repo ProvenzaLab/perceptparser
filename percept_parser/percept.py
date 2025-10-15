@@ -1,7 +1,6 @@
 import json
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from tqdm import tqdm
 import warnings
 
@@ -17,7 +16,7 @@ class PerceptParser:
         with open(filename, "r") as f:
             self.js = json.load(f)
 
-        self.session_date = datetime.fromisoformat(self.js["SessionDate"])
+        self.session_date = pd.Timestamp(self.js["SessionDate"])
 
         self.lead_location = (
             self.js["LeadConfiguration"]["Final"][0]["LeadLocation"]
@@ -35,7 +34,6 @@ class PerceptParser:
         self.diagnosis = self.js["PatientInformation"]["Final"]["Diagnosis"]
 
         self.stim_settings = FileStimGroupSettings(self.js, self.filename)
-
         print(f"{filename}: {self.session_date} - {self.lead_location}")
 
     def parse_all(self, out_path: str = "sub", plot: bool = False):
@@ -56,15 +54,15 @@ class PerceptParser:
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
 
-    
         if not df_brainsense_lfp.empty:
             df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
             df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
             if plot:
                 plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
 
-        if len(dfs_bs_td) > 0:
-            # plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
+        if not dfs_bs_td.empty:
+            if plot:
+                plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
             for _, df_bs_td_i in tqdm(
                 list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"
             ):
@@ -76,10 +74,16 @@ class PerceptParser:
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
                     index=True,
                 )
-                # plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
-                # plotter.time_frequency_plot_td(df_bs_td_i, indefinite_streaming=False, parser=self, out_path=out_path)
+                if plot:
+                    plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
+                    plotter.time_frequency_plot_td(
+                        df_bs_td_i,
+                        indefinite_streaming=False,
+                        parser=self,
+                        out_path=out_path,
+                    )
 
-        if len(dfs_is_td) > 0:
+        if not dfs_is_td.empty:
             if plot:
                 plotter.plot_time_domain_ranges(dfs_is_td, out_path=out_path)
             for _, df_is_td_i in tqdm(
@@ -104,26 +108,40 @@ class PerceptParser:
 
     def _merge_stim_settings(self, samples) -> pd.DataFrame:
         samples_with_time = samples.reset_index()
-
+        print(samples_with_time)
         # Merge asof backwards will perform a left join, matching each sample with the most
         # recent stim settings that started before sample time.
-        merged = pd.merge_asof(
+        samples_with_group = pd.merge_asof(
             samples_with_time.sort_values("Time"),
-            self.stim_settings.groups_settings,
+            self.stim_settings.active_group_history.rename(columns={"hem": "Hemisphere"}),
             left_on="Time",
             right_on="start_time",
             direction="backward",
+            by="Hemisphere",
         )
 
         # Sanity check: if groups don't overlap, all samples should be within start_time and end_time
-        if not (merged["Time"] < merged["end_time"]).all():
+        if not (samples_with_group["Time"] < samples_with_group["end_time"]).all():
             warnings.warn(
                 "Some sample timestamps are outside the group settings time intervals."
                 "Check for overlapping groups."
             )
 
+        #  Warn about samples that fell into invalid periods, if thats even possible
+        invalid_samples = samples_with_group[~samples_with_group["is_valid"]]
+        if not invalid_samples.empty:
+            n_invalid = len(invalid_samples)
+            total = len(samples_with_group)
+            warnings.warn(
+                f"{n_invalid}/{total} samples ({100*n_invalid/total:.1f}%) fell into "
+                f"INVALID group periods (group switched to undefined configuration). "
+                f"These samples dont have defined settings."
+            )
+
         # Drop uninsteresting columns
-        return merged.set_index("Time").drop(columns=["start_time", "end_time", "filename"])
+        return samples_with_group.set_index("Time").drop(
+            columns=["start_time", "end_time", "filename"]
+        )
 
     def parse_lfp_trend_logs(
         self,
@@ -176,11 +194,11 @@ class PerceptParser:
                 [
                     {
                         "TicksInMses": sample["TicksInMs"],
-                        "Right_power": sample["Right"]["LFP"],
-                        "Left_power": sample["Left"]["LFP"],
-                        "Right_stim_current": sample["Right"]["mA"],
-                        "Left_stim_current": sample["Left"]["mA"],
+                        "Power": sample[hem]["LFP"],
+                        "Stim_current": sample[hem]["mA"],
+                        "Hemisphere": hem
                     }
+                    for hem in ["Left", "Right"]  # For each hem
                     for sample in stream["LfpData"]
                 ]
             )
@@ -203,7 +221,7 @@ class PerceptParser:
         self, js_td: dict, num_chs: int, verbose: bool = False
     ) -> pd.DataFrame:
         start_time = js_td["FirstPacketDateTime"]
-        start_time = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+        start_time = pd.Timestamp(start_time)
         fs = js_td["SampleRateInHz"]
         TimeDomainData = np.array(js_td["TimeDomainData"])
         TicksInMses = np.array(

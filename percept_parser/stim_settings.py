@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import json
 import warnings
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 
@@ -47,13 +48,14 @@ class StimGroupSetting:
 
 @dataclass
 class FileStimGroupSettings:
-    settings: pd.DataFrame
     history: pd.DataFrame
     start_time: pd.Timestamp
     end_time: pd.Timestamp
     initial_settings: pd.DataFrame
     final_settings: pd.DataFrame
     groups_settings: pd.DataFrame
+    group_changes: pd.DataFrame
+    active_group_history: pd.DataFrame
 
     def __init__(self, data: str | Path | dict, filename: str = ""):
         match data:
@@ -69,10 +71,114 @@ class FileStimGroupSettings:
             case _:
                 raise ValueError("Data must be a filename or a dictionary")
 
-        self.settings = self._get_group_settings_from_js(data)
+        self._get_group_settings_from_js(data)
+        self._get_group_changes(data)
+        self._get_active_group_history()
+        print(self.active_group_history)
 
-    def add_setting(self, setting: StimGroupSetting):
-        self.settings.append(setting)
+    def _get_active_group_history(self):
+        # Create dataframe of time points with potential group changes (sessions + events) noting the source
+        event_timepoints = pd.DataFrame(
+            {
+                "time": self.group_changes["time"],
+                "type": "event",
+                "new_group": self.group_changes["new_group"],
+            }
+        )
+        session_timepoints = pd.DataFrame(
+            {
+                "time": np.unique(self.groups_settings["start_time"]),
+                "type": "session",
+                "new_group": "",
+            }
+        )
+        timepoints = (
+            pd.concat([event_timepoints, session_timepoints])
+            .sort_values("time")
+            .reset_index(drop=True)
+        )
+
+        # Get overall time range
+        overall_end = self.groups_settings["end_time"].max()
+
+        result_rows = []
+        print(timepoints)
+        # Process each time period
+        for i, row in timepoints.iterrows():
+            period_start = row["time"]
+            if i + 1 < len(timepoints):
+                period_end = timepoints.iloc[i + 1]["time"]
+            else:
+                period_end = overall_end
+
+            match row["type"]:
+                case "session":
+                    # It the change is from a session, find for all groups matching this time
+                    # which one were active in the original group sessions data
+                    active_groups = self.groups_settings[
+                        (self.groups_settings["start_time"] == row["time"])
+                        & (self.groups_settings["is_active"])
+                    ].copy()
+
+                    active_groups["start_time"] = period_start
+                    active_groups["end_time"] = period_end
+                    active_groups["is_valid"] = True
+                    result_rows.append(active_groups)
+
+                case "event":
+                    # If it's from an event, we need to find the destination group settings
+                    # by looking the group settings table for the group
+                    matching_rows = self.groups_settings[
+                        (self.groups_settings["start_time"] <= row["time"])
+                        & (self.groups_settings["end_time"] >= row["time"])
+                        & (self.groups_settings["group_name"] == row["new_group"])
+                    ].copy()
+
+                    # In case we don't find a match (maybe group wasn't defined in session)
+                    # maybe we need to create a dummy row (one per hemisphere)
+                    if matching_rows.empty:
+                        # should always be Left or Right but just in case
+                        unique_hems = self.groups_settings["hem"].unique()
+                        template = self.groups_settings.iloc[0].to_dict()
+                        dummy_rows = []
+                        for hem in unique_hems:
+                            dummy_row = template.copy()
+                            dummy_row["group_name"] = row[
+                                "new_group"
+                            ]  # or maybe INVALID
+                            dummy_row["hem"] = hem
+                            dummy_row["is_valid"] = False
+                            dummy_rows.append(dummy_row)
+                        matching_rows = pd.DataFrame(dummy_rows)
+                    else:
+                        matching_rows["is_valid"] = True
+
+                    matching_rows["start_time"] = period_start
+                    matching_rows["end_time"] = period_end
+
+                    result_rows.append(matching_rows)
+
+        self.active_group_history = pd.concat(result_rows, ignore_index=True)
+
+    def _get_group_changes(self, data: dict):
+        if diag := data.get("DiagnosticData"):
+            events = diag.get("EventLogs", [])
+
+            active_group_changes = [
+                {
+                    "time": pd.Timestamp(event["DateTime"]),
+                    "old_group": event["OldGroupId"].removeprefix("GroupIdDef."),
+                    "new_group": event["NewGroupId"].removeprefix("GroupIdDef."),
+                }
+                for event in events
+                if event.get("ParameterTrendId") == "ParameterTrendIdDef.ActiveGroup"
+            ]
+
+        self.group_changes = (
+            pd.DataFrame(active_group_changes)
+            .sort_values("time")
+            .reset_index(drop=True)
+        )
 
     # def get_settings_at_time(
     #     self, query_ts: pd.Timestamp
@@ -93,6 +199,7 @@ class FileStimGroupSettings:
     def _get_group_settings_from_js(self, data: dict):
         # Note: I'm not doing any location check, I'm taking groups from any location
 
+        # ! DeviceInformation is only for the last clinical session
         self.start_time = pd.Timestamp(
             data["DeviceInformation"]["Initial"]["DeviceDateTime"]
         )
@@ -100,32 +207,31 @@ class FileStimGroupSettings:
             data["DeviceInformation"]["Final"]["DeviceDateTime"]
         )
 
-        # Get Initial and Final group settings, maybe for consistency check?
-        self.initial_settings = pd.DataFrame(
-            [
-                settings
-                for group in data["Groups"]["Initial"]
-                for settings in self._process_group(group)
-            ]
-        )
-        self.final_settings = pd.DataFrame(
-            [
-                settings
-                for group in data["Groups"]["Final"]
-                for settings in self._process_group(group)
-            ]
-        )
+        # ! "Groups" is also only for the last session
+        # self.initial_settings = pd.DataFrame(
+        #     [
+        #         settings
+        #         for group in data["Groups"]["Initial"]
+        #         for settings in self._process_group(group)
+        #     ]
+        # )
+        # self.final_settings = pd.DataFrame(
+        #     [
+        #         settings
+        #         for group in data["Groups"]["Final"]
+        #         for settings in self._process_group(group)
+        #     ]
+        # )
         # Start time makes sense for the initial settings, but not really needed either
-        self.initial_settings["start_time"] = self.start_time
+        # self.initial_settings["start_time"] = self.start_time
         # In case we wanted them in the same dataframe
         # self.initial_settings["state"] = "Initial"
         # self.final_settings["state"] = "Final"
 
         settings_list = []
 
-        # Now get groups from GroupHistory
-        # Assuming descending chronological order (0 is most recent)
-        previous_timestamp = pd.Timestamp.max.tz_localize("UTC")
+        # Get groups from GroupHistory Assuming descending chronological order (0 is most recent)
+        previous_timestamp = self.end_time  # Use last session endtime as "max"
         for session in data["GroupHistory"]:
             session_date = pd.Timestamp(session["SessionDate"])
             for group in session["Groups"]:
@@ -166,7 +272,7 @@ class FileStimGroupSettings:
             )
 
             # These have defaults so they can be missing apparently
-            freq = channel.get("RateInHertz", program_settings["RateInHertz"])
+            freq = channel.get("RateInHertz") or program_settings["RateInHertz"]
             lower_amp = channel.get("LowerAmplitudeInMilliAmps", None)
             upper_amp = channel.get("UpperAmplitudeInMilliAmps", None)
 
@@ -192,8 +298,8 @@ class FileStimGroupSettings:
             sensing_freq = channel.get("SensingSetup", {}).get("FrequencyInHertz")
 
             group_setting = StimGroupSetting(
-                start_time=pd.Timestamp.min.tz_localize('UTC'),
-                end_time=pd.Timestamp.max.tz_localize('UTC'),
+                start_time=pd.Timestamp.min.tz_localize("UTC"),
+                end_time=pd.Timestamp.max.tz_localize("UTC"),
                 hem=hemname,
                 # state="unknown",  # Placeholder
                 group_name=group_name,
@@ -219,7 +325,7 @@ class FileStimGroupSettings:
 
             hem_settings = program_settings[f"{hem}Hemisphere"]["Programs"][0]
 
-            freq = hem_settings.get("RateInHertz", program_settings["RateInHertz"])
+            freq = hem_settings.get("RateInHertz") or program_settings["RateInHertz"]
 
             stim_cathodes = [
                 electrode["Electrode"].removeprefix("ElectrodeDef.")
@@ -240,8 +346,8 @@ class FileStimGroupSettings:
             )
 
             group_setting = StimGroupSetting(
-                start_time=pd.Timestamp.min.tz_localize('UTC'),
-                end_time=pd.Timestamp.max.tz_localize('UTC'),
+                start_time=pd.Timestamp.min.tz_localize("UTC"),
+                end_time=pd.Timestamp.max.tz_localize("UTC"),
                 hem=hem,
                 # state="Unknown",  # Placeholder
                 group_name=group_name,
