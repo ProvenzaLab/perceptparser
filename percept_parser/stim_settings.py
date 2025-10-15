@@ -113,7 +113,7 @@ class FileStimGroupSettings:
 
             match row["type"]:
                 case "session":
-                    # It the change is from a session, find for all groups matching this time
+                    # If the change is from a session, find for all groups matching this time
                     # which one were active in the original group sessions data
                     active_groups = self.groups_settings[
                         (self.groups_settings["start_time"] == row["time"])
@@ -145,7 +145,7 @@ class FileStimGroupSettings:
                             dummy_row = template.copy()
                             dummy_row["group_name"] = row[
                                 "new_group"
-                            ]  # or maybe INVALID
+                            ]
                             dummy_row["hem"] = hem
                             dummy_row["is_valid"] = False
                             dummy_rows.append(dummy_row)
