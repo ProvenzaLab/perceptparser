@@ -60,7 +60,7 @@ class PerceptParser:
             if plot:
                 plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
 
-        if not dfs_bs_td.empty:
+        if len(dfs_bs_td) > 0:
             if plot:
                 plotter.plot_time_domain_ranges(dfs_bs_td, out_path=out_path)
             for _, df_bs_td_i in tqdm(
@@ -70,7 +70,12 @@ class PerceptParser:
                     df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
                     + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
                 )
-                df_bs_td_i.to_csv(
+                # pivot each column to a channel
+                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
+                df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
+
+                df_bs_td_i_pivot.to_csv(
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
                     index=True,
                 )
@@ -83,7 +88,7 @@ class PerceptParser:
                         out_path=out_path,
                     )
 
-        if not dfs_is_td.empty:
+        if len(dfs_is_td) > 0:
             if plot:
                 plotter.plot_time_domain_ranges(dfs_is_td, out_path=out_path)
             for _, df_is_td_i in tqdm(
@@ -93,7 +98,11 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
                     + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
                 )
-                df_is_td_i.to_csv(
+                # pivot each column to a channel
+                df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
+                df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
+                df_is_td_i_pivot.to_csv(
                     Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                     index=True,
                 )
