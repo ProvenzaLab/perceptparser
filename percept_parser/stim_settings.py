@@ -232,6 +232,8 @@ class FileStimGroupSettings:
 
         # Get groups from GroupHistory Assuming descending chronological order (0 is most recent)
         previous_timestamp = self.end_time  # Use last session endtime as "max"
+        if "GroupHistory" not in data:
+            raise ValueError("No GroupHistory found in data")
         for session in data["GroupHistory"]:
             session_date = pd.Timestamp(session["SessionDate"])
             for group in session["Groups"]:

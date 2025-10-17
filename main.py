@@ -2,9 +2,9 @@ from percept_parser import percept
 import os
 
 filename = "Report_Json_Session_Report_20250410T170448.json"
-filename = "/Users/Timon/Downloads/Report_Json_Session_Report_20250626T181946.json"
-filename = '/Users/Timon/Downloads/Report_Json_Session_Report_20250709T102453 (1).json'
+#filename = "/Users/Timon/Downloads/Report_Json_Session_Report_20250626T181946.json"
+#filename = '/Users/Timon/Downloads/Report_Json_Session_Report_20250709T102453 (1).json'
 
 parser = percept.PerceptParser(filename)
 dir_name = os.path.basename(filename)[:-len(".json")]
-parser.parse_all(out_path=dir_name)
+parser.parse_all(out_path=dir_name, plot=True)

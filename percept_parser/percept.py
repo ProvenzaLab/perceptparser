@@ -33,7 +33,11 @@ class PerceptParser:
         self.subject = self.js["PatientInformation"]["Final"]["PatientId"]
         self.diagnosis = self.js["PatientInformation"]["Final"]["Diagnosis"]
 
-        self.stim_settings = FileStimGroupSettings(self.js, self.filename)
+        try:
+            self.stim_settings = FileStimGroupSettings(self.js, self.filename)
+        except Exception as e:
+            print(f"Error initializing stim settings: {e}")
+            self.stim_settings = None
         print(f"{filename}: {self.session_date} - {self.lead_location}")
 
     def parse_all(self, out_path: str = "sub", plot: bool = False):
@@ -49,16 +53,24 @@ class PerceptParser:
         dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
 
         if not df_lfp_trend_logs.empty:
-            df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
+            if self.stim_settings is not None:
+                df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
             df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
 
         if not df_brainsense_lfp.empty:
-            df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
+            if self.stim_settings is not None:
+                df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
             df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
             if plot:
-                plotter.brain_sense_lfp_plot(df_brainsense_lfp, self, out_path=out_path)
+                df_left = df_brainsense_lfp.query("Hemisphere == 'Left'")
+                df_right = df_brainsense_lfp.query("Hemisphere == 'Right'")
+                df_left.columns = [f"Left_{col}" for col in df_left.columns]
+                df_right.columns = [f"Right_{col}" for col in df_right.columns]
+                df_brainsense_lfp_comb = pd.concat([df_left, df_right], axis=1)
+
+                plotter.brain_sense_lfp_plot(df_brainsense_lfp_comb, self, out_path=out_path)
 
         if len(dfs_bs_td) > 0:
             if plot:
@@ -73,7 +85,8 @@ class PerceptParser:
                 # pivot each column to a channel
                 df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
                 df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
-                df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
+                if self.stim_settings is not None:
+                    df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
                 df_bs_td_i_pivot.to_csv(
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
@@ -98,10 +111,13 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
                     + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
                 )
-                # pivot each column to a channel
                 df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
                 df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
-                df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
+                if self.stim_settings is not None:
+                    df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
+                else:
+                    # set Time as index
+                    df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
                 df_is_td_i_pivot.to_csv(
                     Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                     index=True,
@@ -109,7 +125,7 @@ class PerceptParser:
                 if plot:
                     plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
                     plotter.time_frequency_plot_td(
-                        df_bs_td_i,
+                        df_is_td_i,
                         indefinite_streaming=True,
                         parser=self,
                         out_path=out_path,
