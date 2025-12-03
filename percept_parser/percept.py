@@ -79,8 +79,8 @@ class PerceptParser:
                 list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"
             ):
                 str_idx = (
-                    df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-                    + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
+                    df_bs_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
+                    + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
                 df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
@@ -108,8 +108,8 @@ class PerceptParser:
                 list(enumerate(dfs_is_td)), desc="IndefiniteStreaming Plot Index"
             ):
                 str_idx = (
-                    df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-                    + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
+                    df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
+                    + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
                 df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
