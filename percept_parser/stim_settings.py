@@ -74,7 +74,6 @@ class FileStimGroupSettings:
         self._get_group_settings_from_js(data)
         self._get_group_changes(data)
         self._get_active_group_history()
-        print(self.active_group_history)
 
     def _get_active_group_history(self):
         # Create dataframe of time points with potential group changes (sessions + events) noting the source
@@ -102,7 +101,7 @@ class FileStimGroupSettings:
         overall_end = self.groups_settings["end_time"].max()
 
         result_rows = []
-        print(timepoints)
+        
         # Process each time period
         for i, row in timepoints.iterrows():
             period_start = row["time"]
@@ -143,9 +142,7 @@ class FileStimGroupSettings:
                         dummy_rows = []
                         for hem in unique_hems:
                             dummy_row = template.copy()
-                            dummy_row["group_name"] = row[
-                                "new_group"
-                            ]
+                            dummy_row["group_name"] = row["new_group"]
                             dummy_row["hem"] = hem
                             dummy_row["is_valid"] = False
                             dummy_rows.append(dummy_row)

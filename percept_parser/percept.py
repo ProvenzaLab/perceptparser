@@ -79,8 +79,8 @@ class PerceptParser:
                 list(enumerate(dfs_bs_td)), desc="BrainSenseTimeDomain Plot Index"
             ):
                 str_idx = (
-                    df_bs_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-                    + f" - {df_bs_td_i.index[-1].strftime('%H:%M:%S')}"
+                    df_bs_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
+                    + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
                 df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
@@ -108,8 +108,8 @@ class PerceptParser:
                 list(enumerate(dfs_is_td)), desc="IndefiniteStreaming Plot Index"
             ):
                 str_idx = (
-                    df_is_td_i.index[0].strftime("%Y-%m-%d %H:%M:%S")
-                    + f" - {df_is_td_i.index[-1].strftime('%H:%M:%S')}"
+                    df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
+                    + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
                 df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
@@ -133,7 +133,7 @@ class PerceptParser:
 
     def _merge_stim_settings(self, samples) -> pd.DataFrame:
         samples_with_time = samples.reset_index()
-        print(samples_with_time)
+
         # Merge asof backwards will perform a left join, matching each sample with the most
         # recent stim settings that started before sample time.
         samples_with_group = pd.merge_asof(
@@ -280,7 +280,7 @@ class PerceptParser:
         df_counts = pd.DataFrame({"TicksDiff": un, "Counts": counts})
 
         tdtime = np.arange(0, df_i.iloc[0]["GlobalPacketSizes"] / fs, 1 / fs)
-        t_cur = tdtime[-1]
+        t_cur = tdtime[-1] + (1 / fs)  # First time of next packet
 
         l_tdtime = []
         l_tdtime.append(tdtime)
@@ -309,7 +309,20 @@ class PerceptParser:
                 PACKAGE_LOSS_PRESENT = True
                 td_time_packet += t_cur + time_diff - td_time_packet[-1]
             else:
-                td_time_packet += t_cur
+                # To get t_cur to first time of packet after adjusting for missing packets:
+                # 1. Revert t_cur to end of previous of package
+                # 2. Advance by time diff between packets
+                # 3. Go back by the duration of this packet
+                # td_time_packet += (t_cur - 1 / fs) + time_diff - td_time_packet[-1]
+                # Note: because time_diff is rounded to the 50ms, there are rounding errors of 2ms per lost packet
+                # Whitepaper suggests just using the TicksInMses values
+                # However, this method still is 4ms off in some cases
+                td_time_packet += (
+                    ((TicksInMses[i] - TicksInMses[0]) / 1000)  # End of packet
+                    - td_time_packet[-1]  # Offset to start of packet
+                    # Take into account that TicksInMs[0] is END of first packet
+                    + (GlobalPacketSizes[0] - 1) / fs
+                )
                 if verbose:
                     print(f"td_time_ shape: {td_time_packet.shape}")
                     print(f"GlobalPacketSizes: {df_i.iloc[i]['GlobalPacketSizes']}\n")
@@ -318,9 +331,18 @@ class PerceptParser:
                         f"td_time_ shape {td_time_packet.shape} does not match GlobalPacketSizes {df_i.iloc[i]['GlobalPacketSizes']}"
                     )
 
-            t_cur = np.round(td_time_packet[-1] + 1 / fs, decimals=3)
+            t_cur = np.round(td_time_packet[-1] + 1 / fs, decimals=3)  # First time of next packet
             l_tdtime.append(td_time_packet)
             tdtime = np.concatenate([tdtime, td_time_packet])
+
+        # Check that calculation was correct by comparing to actual last value from TicksInMses
+        # print(
+        #     f"Computed last value {tdtime[-1]}",
+        #     f"Theoretical last value: {
+        #         (TicksInMses[-1] - TicksInMses[0]) / 1000
+        #         + (GlobalPacketSizes[0] - 1) / fs
+        #     }",
+        # )
 
         if tdtime.shape[0] != TimeDomainData.shape[0]:
             raise ValueError(
