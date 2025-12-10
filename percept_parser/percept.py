@@ -261,7 +261,9 @@ class PerceptParser:
         )
 
         if sum(GlobalPacketSizes) != TimeDomainData.shape[0]:
+          
             raise ValueError("GlobalPacketSizes does not match TimeDomainData length")
+
 
         df_i = pd.DataFrame(
             {
@@ -382,11 +384,17 @@ class PerceptParser:
             df_chs = []
             idx_package_chs = np.where(FirstPackageDateTimes == first_package)[0]
             for pkg_ch_idx in idx_package_chs:
-                df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
-                    js_td=self.js[str_timedomain][pkg_ch_idx],
-                    num_chs=num_chs,
-                    verbose=False,
-                )
+                try:
+                    df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
+                        js_td=self.js[str_timedomain][pkg_ch_idx],
+                        num_chs=num_chs,
+                        verbose=False,
+                    )
+                except ValueError as e:
+                    print(
+                        f"Error processing {str_timedomain} package index {package_idx}, channel index {pkg_ch_idx}: {e}"
+                    )
+                    continue
                 df_counts["file_idx"] = package_idx
                 df_counts_sum.append(df_counts)
                 df_chs.append(df_ch)
