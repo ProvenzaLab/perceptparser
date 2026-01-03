@@ -292,26 +292,35 @@ def plot_time_domain_ranges(dfs_: list[pd.DataFrame], out_path: str):
     plt.savefig(f"{out_path}/time_domain_ranges.pdf")
     plt.close()
 
-def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedomain: bool = True):
+def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedomain: bool = True, FILTER = False):
     #df_plt = dfs_[15]
     if brain_sense_timedomain:
         str_prefix = "bstd_"
     else:
         str_prefix = "istd_"
-    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0]}_{df_plt.index[-1]}.pdf"
+    time_start = df_plt.index[0]
+    time_end = df_plt.index[-1]
+    time_star_ = time_start.strftime("%Y-%m-%d_%H-%M-%S")
+    time_end_ = time_end.strftime("%Y-%m-%d_%H-%M-%S")
+    pdf_path = f"{out_path}/{str_prefix}{time_star_}_TO_{time_end_}.pdf"
     pdf_ = PdfPages(pdf_path)
     TIME_INTERVAL = 10
     samples = 250 * TIME_INTERVAL
     fs = 250
-    FILTER = False
+    
     df_plt["idx_counter"] = np.arange(df_plt.shape[0]) // samples
-    chs = df_plt.columns[0:2]  # Exclude 'timestamp' and 'idx_counter'
+    chs = df_plt.columns[0:-1]  # Exclude 'idx_counter'
     for idx_cnt in tqdm(df_plt["idx_counter"].unique()):
         df_range_ = df_plt[df_plt["idx_counter"] == idx_cnt]
 
-        plt.figure(figsize=(12, 5))
+        if len(chs) == 2:
+            plt.figure(figsize=(12, 5))
+        elif len(chs) == 6:
+            plt.figure(figsize=(12, 10))
+        elif len(chs) == 1:
+            plt.figure(figsize=(12, 3))
         plt.suptitle(f"Time Series - idx: {idx_cnt}\n" +
-                        f"ch1: {chs[0]} ch2: {chs[1]}\n" +
+                        f"{list(chs)} \n" +
                         f"{df_range_.index[0]} - {df_range_.index[-1]}")
         for ch_idx, ch_name in enumerate(chs):
             data_ = df_range_[ch_name].to_numpy()
@@ -321,7 +330,7 @@ def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedoma
                 data_filtered = mne.filter.filter_data(
                     data_raw,
                     sfreq=fs,
-                    l_freq=105,
+                    l_freq=None,
                     h_freq=95,
                     method='iir',
                     verbose=False
@@ -344,17 +353,17 @@ def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedoma
                 )
                 data_ = data_filtered
 
-            plt.subplot(2, 3, ch_idx*3 + 1)
+            plt.subplot(len(chs), 3, ch_idx*3 + 1)
             plt.plot(np.arange(0, data_.shape[0]/fs, 1/fs), data_, linewidth=0.5)
             plt.gca().spines['right'].set_visible(False); plt.gca().spines['top'].set_visible(False)
             plt.xlabel("Time [s]")
             plt.ylabel("Amplitude [a.u.]")
-            plt.subplot(2, 3, ch_idx*3 + 2)
+            plt.subplot(len(chs), 3, ch_idx*3 + 2)
             plt.plot(np.arange(0, data_[:250].shape[0]/fs, 1/fs), data_[:250], linewidth=0.5)
             plt.gca().spines['right'].set_visible(False); plt.gca().spines['top'].set_visible(False)
             plt.xlabel("Time [s]")
             plt.ylabel("Amplitude [a.u.]")
-            plt.subplot(2, 3, ch_idx*3 + 3)
+            plt.subplot(len(chs), 3, ch_idx*3 + 3)
             if FILTER is False:
                 data_ = np.nan_to_num(data_, nan=0.0)
             f, Pxx = signal.welch(data_, fs=fs, nperseg=250)
@@ -363,6 +372,7 @@ def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedoma
             plt.xlabel("Frequency [Hz]")
             plt.ylabel("PSD [a.u.]")
         plt.tight_layout()
+        plt.savefig("test.pdf")
         pdf_.savefig(bbox_inches='tight')
         plt.close()
     pdf_.close()
