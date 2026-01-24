@@ -54,15 +54,15 @@ class PerceptParser:
         dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
 
         if not df_lfp_trend_logs.empty:
-            # if self.stim_settings is not None:
-            #     df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
+            if self.stim_settings is not None:
+                df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
             df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
 
         if not df_brainsense_lfp.empty:
-            # if self.stim_settings is not None:
-            #     df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
+            if self.stim_settings is not None:
+                df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
             df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
             if plot:
                 df_left = df_brainsense_lfp.query("Hemisphere == 'Left'")
@@ -92,8 +92,8 @@ class PerceptParser:
                 df_bs_td_i_pivot["Hemisphere"] = np.where(
                     df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
                 )
-                # if self.stim_settings is not None:
-                #     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
+                if self.stim_settings is not None:
+                    df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
                 df_bs_td_i_pivot.to_csv(
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
@@ -121,14 +121,14 @@ class PerceptParser:
                 df_is_td_i_pivot = df_is_td_i.reset_index().melt(
                     id_vars=["Time"], var_name="Channel", value_name="Value"
                 )
-                # df_is_td_i_pivot["Hemisphere"] = np.where(
-                #     df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
-                # )
-                # if self.stim_settings is not None:
-                #     df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
-                # else:
-                # set Time as index
-                df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
+                df_is_td_i_pivot["Hemisphere"] = np.where(
+                    df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
+                if self.stim_settings is not None:
+                    df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
+                else:
+                    # set Time as index
+                    df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
                 df_is_td_i_pivot.to_csv(
                     Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                     index=True,
@@ -146,13 +146,25 @@ class PerceptParser:
     def _merge_stim_settings(self, samples) -> pd.DataFrame:
         samples_with_time = samples.reset_index()
 
+        # Make sure time has same format in both tables before merging
+        if samples_with_time["Time"].dtype != "datetime64[ns, UTC]":
+            samples_with_time["Time"] = samples_with_time["Time"].astype(
+                "datetime64[ns, UTC]"
+            )
+
+        stim_history = self.stim_settings.active_group_history.rename(
+            columns={"hem": "Hemisphere"}
+        )
+        if stim_history["start_time"].dtype != "datetime64[ns, UTC]":
+            stim_history["start_time"] = stim_history["start_time"].astype(
+                "datetime64[ns, UTC]"
+            )
+
         # Merge asof backwards will perform a left join, matching each sample with the most
         # recent stim settings that started before sample time.
         samples_with_group = pd.merge_asof(
             samples_with_time.sort_values("Time"),
-            self.stim_settings.active_group_history.rename(
-                columns={"hem": "Hemisphere"}
-            ),
+            stim_history,
             left_on="Time",
             right_on="start_time",
             direction="backward",
@@ -274,7 +286,7 @@ class PerceptParser:
             ValueError: _description_
 
         Returns:
-            pd.DataFrame: _description_
+            tuple[pd.DataFrame, pd.DataFrame, bool]: (df_ch, df_counts, PACKAGE_LOSS_PRESENT)
         """
         # Absolute datetime for the first sent pacakge of the stream
         first_packet_time = datetime.fromisoformat(js_td["FirstPacketDateTime"])
@@ -304,18 +316,9 @@ class PerceptParser:
         # Differences in tick between sent packages, to check for package loss
         TicksDiff = np.concatenate([np.diff(TicksInMses), np.array([np.nan])])
 
-        # Check that packages are sorteds
+        # Check that packages are sorteds (sometimes this fails, which is worrysome)
         # if not np.all(TicksInMses[:-1] <= TicksInMses[1:]):
         #     raise ValueError("Packages in the wrong order")
-
-        # df_i = pd.DataFrame(
-        #     {
-        #         "GlobalPacketSizes": GlobalPacketSizes,
-        #         "TicksInMsesDiff": TicksDiff,
-        #         "TicksInMses": TicksInMses,
-        #     }
-        # )
-        # print(df_i)
 
         # if indefinite_streaming:
         #     # collapse df_i
@@ -327,12 +330,12 @@ class PerceptParser:
         # According to the algorithm described in the whitepaper, we have to iterate backwards
         period_ms = 1000 / fs  # Gap between data points in milliseconds
         num_packets = len(GlobalPacketSizes)
-        PACKAGE_LOSS_PRESENT = False
 
         # Start with he last packet
         last_packet_size = GlobalPacketSizes[-1]
         tick_ms_end = TicksInMses[-1]
         start_time = tick_ms_end - (last_packet_size - 1) * period_ms
+        PACKAGE_LOSS_PRESENT = False
         tdtime = np.linspace(start_time, tick_ms_end, last_packet_size)
 
         # Continue from second to last and backwards
@@ -380,14 +383,6 @@ class PerceptParser:
                     )
                 tdtime = np.concat((tdtime_packet, tdtime))
 
-        # Check that calculation was correct by comparing to actual last value from TicksInMses
-        # print(
-        #     f"Computed first value {tdtime[0]}",
-        #     f"Theoretical last value: {
-        #         TicksInMses[0] - (GlobalPacketSizes[0] - 1) * period_ms
-        #     }",
-        # )
-
         tdtime -= tdtime[0]  # Start at 0
         tdtime /= 1000  # To seconds
 
@@ -398,6 +393,7 @@ class PerceptParser:
                 f"tdtime shape {tdtime_packet.shape} does not match TimeDomainData shape {TimeDomainData.shape}"
             )
 
+        # Convert to dataframe
         td_ = pd.to_timedelta(tdtime, unit="s") + pd.Timestamp(first_packet_time)
         ch_ = js_td["Channel"]
         df_ch = pd.DataFrame(
