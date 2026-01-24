@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import pandas as pd
 import numpy as np
@@ -53,15 +54,15 @@ class PerceptParser:
         dfs_is_td = self.read_timedomain_data(indefinite_streaming=True)
 
         if not df_lfp_trend_logs.empty:
-            if self.stim_settings is not None:
-                df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
+            # if self.stim_settings is not None:
+            #     df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
             df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
 
         if not df_brainsense_lfp.empty:
-            if self.stim_settings is not None:
-                df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
+            # if self.stim_settings is not None:
+            #     df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
             df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
             if plot:
                 df_left = df_brainsense_lfp.query("Hemisphere == 'Left'")
@@ -70,7 +71,9 @@ class PerceptParser:
                 df_right.columns = [f"Right_{col}" for col in df_right.columns]
                 df_brainsense_lfp_comb = pd.concat([df_left, df_right], axis=1)
 
-                plotter.brain_sense_lfp_plot(df_brainsense_lfp_comb, self, out_path=out_path)
+                plotter.brain_sense_lfp_plot(
+                    df_brainsense_lfp_comb, self, out_path=out_path
+                )
 
         if len(dfs_bs_td) > 0:
             if plot:
@@ -83,10 +86,14 @@ class PerceptParser:
                     + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
-                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
-                if self.stim_settings is not None:
-                    df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
+                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                df_bs_td_i_pivot["Hemisphere"] = np.where(
+                    df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
+                # if self.stim_settings is not None:
+                #     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
                 df_bs_td_i_pivot.to_csv(
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
@@ -111,18 +118,23 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
                     + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
-                df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
-                if self.stim_settings is not None:
-                    df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
-                else:
-                    # set Time as index
-                    df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
+                df_is_td_i_pivot = df_is_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                # df_is_td_i_pivot["Hemisphere"] = np.where(
+                #     df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                # )
+                # if self.stim_settings is not None:
+                #     df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
+                # else:
+                # set Time as index
+                df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
                 df_is_td_i_pivot.to_csv(
                     Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                     index=True,
                 )
                 if plot:
+                    print("outpath", out_path)
                     plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
                     plotter.time_frequency_plot_td(
                         df_is_td_i,
@@ -138,7 +150,9 @@ class PerceptParser:
         # recent stim settings that started before sample time.
         samples_with_group = pd.merge_asof(
             samples_with_time.sort_values("Time"),
-            self.stim_settings.active_group_history.rename(columns={"hem": "Hemisphere"}),
+            self.stim_settings.active_group_history.rename(
+                columns={"hem": "Hemisphere"}
+            ),
             left_on="Time",
             right_on="start_time",
             direction="backward",
@@ -158,7 +172,7 @@ class PerceptParser:
             n_invalid = len(invalid_samples)
             total = len(samples_with_group)
             warnings.warn(
-                f"{n_invalid}/{total} samples ({100*n_invalid/total:.1f}%) fell into "
+                f"{n_invalid}/{total} samples ({100 * n_invalid / total:.1f}%) fell into "
                 f"INVALID group periods (group switched to undefined configuration). "
                 f"These samples dont have defined settings."
             )
@@ -221,7 +235,7 @@ class PerceptParser:
                         "TicksInMses": sample["TicksInMs"],
                         "Power": sample[hem]["LFP"],
                         "Stim_current": sample[hem]["mA"],
-                        "Hemisphere": hem
+                        "Hemisphere": hem,
                     }
                     for hem in ["Left", "Right"]  # For each hem
                     for sample in stream["LfpData"]
@@ -244,49 +258,86 @@ class PerceptParser:
 
     def get_time_stream(
         self, js_td: dict, num_chs: int, verbose: bool = False
-    ) -> pd.DataFrame:
-        start_time = js_td["FirstPacketDateTime"]
-        start_time = pd.Timestamp(start_time)
+    ) -> tuple[pd.DataFrame, pd.DataFrame, bool]:
+        """Estimate relative time at which each datapoint in a BrainSenseTimeDomain
+        or IndefiniteStreaming data stream was sampled.  Uses the algorithm defined
+        in page 35 of Medtronic's DBS Sensing And Adaptive Therapy White Paper
+
+        Args:
+            stream_json (dict): _description_
+            num_chs (int): _description_
+            verbose (bool, optional): _description_. Defaults to False.
+
+        Raises:
+            ValueError: _description_
+            ValueError: _description_
+            ValueError: _description_
+
+        Returns:
+            pd.DataFrame: _description_
+        """
+        # Absolute datetime for the first sent pacakge of the stream
+        first_packet_time = datetime.fromisoformat(js_td["FirstPacketDateTime"])
+
+        # Recording sample rate for this data stream
         fs = js_td["SampleRateInHz"]
+
+        # Measurement value for each datapoint at SampleRateInHz
         TimeDomainData = np.array(js_td["TimeDomainData"])
-        TicksInMses = np.array(
-            [int(tick) for tick in js_td["TicksInMses"].split(",")[:-1]]
-        )
-        TicksDiff = np.diff(TicksInMses)
-        GlobalPacketSizes = np.array(
-            [int(size) for size in js_td["GlobalPacketSizes"].split(",")[:-1]]
-        )
-        GlobalSequences = np.array(
-            [int(seq) for seq in js_td["GlobalSequences"].split(",")[:-1]]
+
+        #  List of number of samples per telemetry packet
+        GlobalPacketSizes = np.fromstring(
+            js_td["GlobalPacketSizes"], sep=",", dtype=int
         )
 
-        if sum(GlobalPacketSizes) != TimeDomainData.shape[0]:
+        # Recording device system tick at the moment of package transmission
+        TicksInMses = np.fromstring(js_td["TicksInMses"], sep=",", dtype=int)
+
+        # Integrity check: The sum of packet sizes should match the namber of data points
+        if np.sum(GlobalPacketSizes) != TimeDomainData.shape[0]:
             raise ValueError("GlobalPacketSizes does not match TimeDomainData length")
 
-        df_i = pd.DataFrame(
-            {
-                "GlobalPacketSizes": GlobalPacketSizes,
-                "GlobalSequences": GlobalSequences,
-                "TicksInMsesDiff": np.concatenate([np.array([np.nan]), TicksDiff]),
-                "TicksInMses": TicksInMses,
-            }
-        )
+        # Integrity check: The amount of packets should match the array of packet send times
+        if len(GlobalPacketSizes) != len(TicksInMses):
+            raise ValueError("Inconsistent number of packets in stream")
+
+        # Differences in tick between sent packages, to check for package loss
+        TicksDiff = np.concatenate([np.diff(TicksInMses), np.array([np.nan])])
+
+        # Check that packages are sorteds
+        # if not np.all(TicksInMses[:-1] <= TicksInMses[1:]):
+        #     raise ValueError("Packages in the wrong order")
+
+        # df_i = pd.DataFrame(
+        #     {
+        #         "GlobalPacketSizes": GlobalPacketSizes,
+        #         "TicksInMsesDiff": TicksDiff,
+        #         "TicksInMses": TicksInMses,
+        #     }
+        # )
+        # print(df_i)
 
         # if indefinite_streaming:
         #     # collapse df_i
         #     idx_250_before = df_i.query("TicksInMsesDiff == 250").index-1
 
-        un, counts = np.unique(TicksDiff, return_counts=True)
+        un, counts = np.unique(np.diff(TicksInMses), return_counts=True)
         df_counts = pd.DataFrame({"TicksDiff": un, "Counts": counts})
 
-        tdtime = np.arange(0, df_i.iloc[0]["GlobalPacketSizes"] / fs, 1 / fs)
-        t_cur = tdtime[-1] + (1 / fs)  # First time of next packet
-
-        l_tdtime = []
-        l_tdtime.append(tdtime)
+        # According to the algorithm described in the whitepaper, we have to iterate backwards
+        period_ms = 1000 / fs  # Gap between data points in milliseconds
+        num_packets = len(GlobalPacketSizes)
         PACKAGE_LOSS_PRESENT = False
-        for i in np.arange(1, df_i.shape[0], 1):
-            time_diff = df_i.iloc[i]["TicksInMsesDiff"] / 1000  # s
+
+        # Start with he last packet
+        last_packet_size = GlobalPacketSizes[-1]
+        tick_ms_end = TicksInMses[-1]
+        start_time = tick_ms_end - (last_packet_size - 1) * period_ms
+        tdtime = np.linspace(start_time, tick_ms_end, last_packet_size)
+
+        # Continue from second to last and backwards
+        for i in range(num_packets - 2, -1, -1):
+            time_diff = TicksDiff[i] / 1000  # s
 
             # for indefinite streaming with 6 chs diffs are 250
             # for brainsense time domain data there are two chs
@@ -298,58 +349,56 @@ class PerceptParser:
                 time_diff = time_diff / 3  # here I don't know,
             elif num_chs == 6:
                 time_diff = time_diff / 2
-            if time_diff < 0:
-                time_diff = np.unique(TicksDiff)[0] / 1000  # s, most freq value
 
-            td_time_packet = np.arange(
-                0, df_i.iloc[i]["GlobalPacketSizes"] / fs, 1 / fs
-            )
+            # Is this even possible? If so, would need to reorder TimeDomainData
+            # if time_diff < 0:
+            #     time_diff = np.bincount(TicksDiff).argmax() / 1000  # most freq value
 
-            if time_diff > (df_i.iloc[i]["GlobalPacketSizes"] + 1) / fs:
+            # Should I use this one or previous one for time diff check?
+            packet_size = GlobalPacketSizes[i]
+
+            # In case of packet loss (time between packets too long)
+            if time_diff > (packet_size + 1) / fs:  # If packages missing
                 PACKAGE_LOSS_PRESENT = True
-                td_time_packet += t_cur + time_diff - td_time_packet[-1]
+                end_time = TicksInMses[i]  # Re-anchor time using the ticks
+                start_time = end_time - (packet_size - 1) * period_ms
+                tdtime_packet = np.linspace(start_time, end_time, packet_size)
+                # And join with the previous
+                tdtime = np.concat((tdtime_packet, tdtime))
             else:
-                # To get t_cur to first time of packet after adjusting for missing packets:
-                # 1. Revert t_cur to end of previous of package
-                # 2. Advance by time diff between packets
-                # 3. Go back by the duration of this packet
-                # td_time_packet += (t_cur - 1 / fs) + time_diff - td_time_packet[-1]
-                # Note: because time_diff is rounded to the 50ms, there are rounding errors of 2ms per lost packet
-                # Whitepaper suggests just using the TicksInMses values
-                # However, this method still is 4ms off in some cases
-                td_time_packet += (
-                    ((TicksInMses[i] - TicksInMses[0]) / 1000)  # End of packet
-                    - td_time_packet[-1]  # Offset to start of packet
-                    # Take into account that TicksInMs[0] is END of first packet
-                    + (GlobalPacketSizes[0] - 1) / fs
-                )
-                if verbose:
-                    print(f"td_time_ shape: {td_time_packet.shape}")
-                    print(f"GlobalPacketSizes: {df_i.iloc[i]['GlobalPacketSizes']}\n")
-                if td_time_packet.shape[0] != df_i.iloc[i]["GlobalPacketSizes"]:
-                    raise ValueError(
-                        f"td_time_ shape {td_time_packet.shape} does not match GlobalPacketSizes {df_i.iloc[i]['GlobalPacketSizes']}"
-                    )
+                # If no packet loss, assume data is continuous
+                end_time = tdtime[0] - period_ms  # Account for gap betwen packets
+                start_time = end_time - (packet_size - 1) * period_ms
+                tdtime_packet = np.linspace(start_time, end_time, packet_size)
 
-            t_cur = np.round(td_time_packet[-1] + 1 / fs, decimals=3)  # First time of next packet
-            l_tdtime.append(td_time_packet)
-            tdtime = np.concatenate([tdtime, td_time_packet])
+                if verbose:
+                    print(f"td_time_ shape: {tdtime_packet.shape}")
+                    print(f"GlobalPacketSizes: {GlobalPacketSizes[i]}\n")
+                if tdtime_packet.shape[0] != GlobalPacketSizes[i]:
+                    raise ValueError(
+                        f"td_time_ shape {tdtime_packet.shape} does not match GlobalPacketSizes {GlobalPacketSizes[i]}"
+                    )
+                tdtime = np.concat((tdtime_packet, tdtime))
 
         # Check that calculation was correct by comparing to actual last value from TicksInMses
         # print(
-        #     f"Computed last value {tdtime[-1]}",
+        #     f"Computed first value {tdtime[0]}",
         #     f"Theoretical last value: {
-        #         (TicksInMses[-1] - TicksInMses[0]) / 1000
-        #         + (GlobalPacketSizes[0] - 1) / fs
+        #         TicksInMses[0] - (GlobalPacketSizes[0] - 1) * period_ms
         #     }",
         # )
 
+        tdtime -= tdtime[0]  # Start at 0
+        tdtime /= 1000  # To seconds
+
+        # Assert that the time array has the same shape as the measurements array
+        # (i.e. all measurements have been assigned a timestamp)
         if tdtime.shape[0] != TimeDomainData.shape[0]:
             raise ValueError(
-                f"tdtime shape {tdtime.shape} does not match TimeDomainData shape {TimeDomainData.shape}"
+                f"tdtime shape {tdtime_packet.shape} does not match TimeDomainData shape {TimeDomainData.shape}"
             )
 
-        td_ = pd.to_timedelta(tdtime, unit="s") + pd.Timestamp(start_time)
+        td_ = pd.to_timedelta(tdtime, unit="s") + pd.Timestamp(first_packet_time)
         ch_ = js_td["Channel"]
         df_ch = pd.DataFrame(
             {
@@ -376,7 +425,9 @@ class PerceptParser:
 
         return df_ch, df_counts, PACKAGE_LOSS_PRESENT
 
-    def read_timedomain_data(self, indefinite_streaming: bool = True) -> pd.DataFrame:
+    def read_timedomain_data(
+        self, indefinite_streaming: bool = True
+    ) -> list[pd.DataFrame]:
         if indefinite_streaming:
             str_timedomain = "IndefiniteStreaming"
         else:
@@ -404,11 +455,15 @@ class PerceptParser:
             df_chs = []
             idx_package_chs = np.where(FirstPackageDateTimes == first_package)[0]
             for pkg_ch_idx in idx_package_chs:
-                df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
-                    js_td=self.js[str_timedomain][pkg_ch_idx],
-                    num_chs=num_chs,
-                    verbose=False,
-                )
+                try:
+                    df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
+                        js_td=self.js[str_timedomain][pkg_ch_idx],
+                        num_chs=num_chs,
+                        verbose=False,
+                    )
+                except Exception as e:
+                    print(e)
+
                 df_counts["file_idx"] = package_idx
                 df_counts_sum.append(df_counts)
                 df_chs.append(df_ch)
@@ -419,65 +474,3 @@ class PerceptParser:
             )
             df_.append(df_concat)
         return df_
-
-    # def read_brainsense_timedomain(
-    #     self,
-    # ) -> pd.DataFrame:
-    #     if "BrainSenseTimeDomain" not in self.js:
-    #         print("No BrainSenseTimeDomain found in the JSON file.")
-    #         return pd.DataFrame()
-
-    #     df_counts_sum = []
-    #     df_chs = []
-    #     for index_ in tqdm(
-    #         range(len(self.js["BrainSenseTimeDomain"])), desc="BSTimeDomain Index"
-    #     ):
-    #         df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
-    #             self.js["BrainSenseTimeDomain"][index_],
-    #             False,
-    #             indefinite_streaming=False,
-    #         )
-    #         df_counts["file_idx"] = index_
-    #         df_counts_sum.append(df_counts)
-
-    #         df_chs.append(df_ch)
-    #     df_concat = pd.concat(df_chs, axis=0).reset_index()
-    #     df_concat = df_concat.drop_duplicates(subset=["Time", "Channel"])
-    #     df_concat = df_concat.reset_index().pivot(
-    #         index="Time", columns="Channel", values="Data"
-    #     )
-
-    #     df_counts = pd.concat(df_counts_sum, axis=0)
-    #     df_counts["Time_Diff_Total"] = df_counts["Counts"] * df_counts["TicksDiff"]
-    #     file_sum = df_counts.groupby("file_idx")["Time_Diff_Total"].sum().reset_index()
-    #     file_missing = (
-    #         df_counts.query("TicksDiff != 250")
-    #         .groupby("file_idx")["Time_Diff_Total"]
-    #         .sum()
-    #         .reset_index()
-    #     )
-
-    #     df_counts_file_idx = pd.merge(
-    #         file_sum,
-    #         file_missing,
-    #         on="file_idx",
-    #         how="outer",
-    #         suffixes=("_sum", "_missing"),
-    #     )
-    #     df_counts_file_idx = df_counts_file_idx.fillna(0)
-    #     df_counts_file_idx = df_counts_file_idx.sort_values(
-    #         by="Time_Diff_Total_missing", ascending=True
-    #     ).iloc[::2]
-
-    #     df_counts_file_idx["Time_Diff_Total_sum"] = (
-    #         df_counts_file_idx["Time_Diff_Total_sum"] / 1000
-    #     )
-    #     df_counts_file_idx["Time_Diff_Total_missing"] = (
-    #         df_counts_file_idx["Time_Diff_Total_missing"] / 1000
-    #     )
-
-    #     df_counts_file_idx["Time_Diff_Total_missing_clipped"] = df_counts_file_idx[
-    #         "Time_Diff_Total_missing"
-    #     ].clip(upper=10)
-
-    #     return df_concat, df_counts_file_idx
