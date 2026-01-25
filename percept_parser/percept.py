@@ -71,9 +71,7 @@ class PerceptParser:
                 df_right.columns = [f"Right_{col}" for col in df_right.columns]
                 df_brainsense_lfp_comb = pd.concat([df_left, df_right], axis=1)
 
-                plotter.brain_sense_lfp_plot(
-                    df_brainsense_lfp_comb, self, out_path=out_path
-                )
+                plotter.brain_sense_lfp_plot(df_brainsense_lfp_comb, self, out_path=out_path)
 
         if len(dfs_bs_td) > 0:
             if plot:
@@ -86,12 +84,8 @@ class PerceptParser:
                     + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
-                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(
-                    id_vars=["Time"], var_name="Channel", value_name="Value"
-                )
-                df_bs_td_i_pivot["Hemisphere"] = np.where(
-                    df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
-                )
+                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
+                df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
                 if self.stim_settings is not None:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
@@ -118,12 +112,8 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
                     + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
-                df_is_td_i_pivot = df_is_td_i.reset_index().melt(
-                    id_vars=["Time"], var_name="Channel", value_name="Value"
-                )
-                df_is_td_i_pivot["Hemisphere"] = np.where(
-                    df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
-                )
+                df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
+                df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
                 if self.stim_settings is not None:
                     df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
                 else:
@@ -134,7 +124,6 @@ class PerceptParser:
                     index=True,
                 )
                 if plot:
-                    print("outpath", out_path)
                     plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
                     plotter.time_frequency_plot_td(
                         df_is_td_i,
