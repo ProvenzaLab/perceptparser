@@ -71,7 +71,9 @@ class PerceptParser:
                 df_right.columns = [f"Right_{col}" for col in df_right.columns]
                 df_brainsense_lfp_comb = pd.concat([df_left, df_right], axis=1)
 
-                plotter.brain_sense_lfp_plot(df_brainsense_lfp_comb, self, out_path=out_path)
+                plotter.brain_sense_lfp_plot(
+                    df_brainsense_lfp_comb, self, out_path=out_path
+                )
 
         if len(dfs_bs_td) > 0:
             if plot:
@@ -84,8 +86,12 @@ class PerceptParser:
                     + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
-                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                df_bs_td_i_pivot["Hemisphere"] = np.where(
+                    df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
                 if self.stim_settings is not None:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
@@ -112,8 +118,12 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
                     + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
-                df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_is_td_i_pivot = df_is_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                df_is_td_i_pivot["Hemisphere"] = np.where(
+                    df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
                 if self.stim_settings is not None:
                     df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
                 else:
@@ -413,23 +423,23 @@ class PerceptParser:
     def read_timedomain_data(
         self, indefinite_streaming: bool = True
     ) -> list[pd.DataFrame]:
-        if indefinite_streaming:
-            str_timedomain = "IndefiniteStreaming"
-        else:
-            str_timedomain = "BrainSenseTimeDomain"
+        str_timedomain = (
+            "IndefiniteStreaming" if indefinite_streaming else "BrainSenseTimeDomain"
+        )
         if str_timedomain not in self.js:
             print(f"No {str_timedomain} found in the JSON file.")
             return []
 
+        # Each channel has its own "Streaming Sample" object,
+        # but all recording sessions are stored at the same level
+        td_data = self.js[str_timedomain]
+
+        # We can separate recording sessions looking at FirstPacketDateTime
         FirstPackageDateTimes = np.array(
-            [
-                self.js[str_timedomain][index_]["FirstPacketDateTime"]
-                for index_ in range(len(self.js[str_timedomain]))
-            ]
+            [stream["FirstPacketDateTime"] for stream in td_data]
         )
-        num_chs = np.where(FirstPackageDateTimes == FirstPackageDateTimes[0])[0].shape[
-            0
-        ]
+        channels = np.unique([stream["Channel"] for stream in td_data])
+        num_chs = len(channels)
 
         df_ = []
         for package_idx, first_package in tqdm(
