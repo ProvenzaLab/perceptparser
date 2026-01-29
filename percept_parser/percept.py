@@ -71,7 +71,9 @@ class PerceptParser:
                 df_right.columns = [f"Right_{col}" for col in df_right.columns]
                 df_brainsense_lfp_comb = pd.concat([df_left, df_right], axis=1)
 
-                plotter.brain_sense_lfp_plot(df_brainsense_lfp_comb, self, out_path=out_path)
+                plotter.brain_sense_lfp_plot(
+                    df_brainsense_lfp_comb, self, out_path=out_path
+                )
 
         if len(dfs_bs_td) > 0:
             if plot:
@@ -84,8 +86,12 @@ class PerceptParser:
                     + f"_{df_bs_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
                 # pivot each column to a channel
-                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_bs_td_i_pivot["Hemisphere"] = np.where(df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_bs_td_i_pivot = df_bs_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                df_bs_td_i_pivot["Hemisphere"] = np.where(
+                    df_bs_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
                 if self.stim_settings is not None:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
 
@@ -112,8 +118,12 @@ class PerceptParser:
                     df_is_td_i.index[0].strftime("%Y-%m-%d_%H-%M-%S")
                     + f"_{df_is_td_i.index[-1].strftime('%H-%M-%S')}"
                 )
-                df_is_td_i_pivot = df_is_td_i.reset_index().melt(id_vars=["Time"], var_name="Channel", value_name="Value")
-                df_is_td_i_pivot["Hemisphere"] = np.where(df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right")
+                df_is_td_i_pivot = df_is_td_i.reset_index().melt(
+                    id_vars=["Time"], var_name="Channel", value_name="Value"
+                )
+                df_is_td_i_pivot["Hemisphere"] = np.where(
+                    df_is_td_i_pivot["Channel"].str.contains("LEFT"), "Left", "Right"
+                )
                 if self.stim_settings is not None:
                     df_is_td_i_pivot = self._merge_stim_settings(df_is_td_i_pivot)
                 else:
@@ -265,9 +275,9 @@ class PerceptParser:
         in page 35 of Medtronic's DBS Sensing And Adaptive Therapy White Paper
 
         Args:
-            stream_json (dict): _description_
-            num_chs (int): _description_
-            verbose (bool, optional): _description_. Defaults to False.
+            js_td (dict): Section of the Percept JSON that contains the TimeDomain data, either BrainSenseTimeDomain or IndefiniteStreaming
+            num_chs (int): Number of channels in the recording
+            verbose (bool, optional): Defaults to False.
 
         Raises:
             ValueError: _description_
@@ -413,45 +423,54 @@ class PerceptParser:
     def read_timedomain_data(
         self, indefinite_streaming: bool = True
     ) -> list[pd.DataFrame]:
-        if indefinite_streaming:
-            str_timedomain = "IndefiniteStreaming"
-        else:
-            str_timedomain = "BrainSenseTimeDomain"
+        """_summary_
+
+        Args:
+            indefinite_streaming (bool, optional): Attempt to read IndefiniteStreaming data, otherwise defaults to BrainSenseTimeDomain.
+
+        Returns:
+            list[pd.DataFrame]: List of Dataframes, one per streaming session. Each dataframe contains one series per channel
+        """
+
+        str_timedomain = (
+            "IndefiniteStreaming" if indefinite_streaming else "BrainSenseTimeDomain"
+        )
+
         if str_timedomain not in self.js:
             print(f"No {str_timedomain} found in the JSON file.")
             return []
 
+        timedomain_data = self.js[str_timedomain]
+
+        # We can identify the streaming sessions accross different channels by looking at their timestamp
         FirstPackageDateTimes = np.array(
-            [
-                self.js[str_timedomain][index_]["FirstPacketDateTime"]
-                for index_ in range(len(self.js[str_timedomain]))
-            ]
+            [stream["FirstPacketDateTime"] for stream in timedomain_data]
         )
-        num_chs = np.where(FirstPackageDateTimes == FirstPackageDateTimes[0])[0].shape[
-            0
+
+        # For each timestamp (~stream) we get the index for the recordings, one per channel
+        list_stream_channels = [
+            np.where(FirstPackageDateTimes == timestamp)[0]
+            for timestamp in np.unique(FirstPackageDateTimes)
         ]
 
+        # Iterate over streams, processing each time series (one per stream and channel)
         df_ = []
-        for package_idx, first_package in tqdm(
-            list(enumerate(np.unique(FirstPackageDateTimes))),
-            desc=f"{str_timedomain} Index",
-        ):
-            df_counts_sum = []
-            df_chs = []
-            idx_package_chs = np.where(FirstPackageDateTimes == first_package)[0]
-            for pkg_ch_idx in idx_package_chs:
+        for stream_channels in tqdm(list_stream_channels, desc=f"{str_timedomain} Index"):
+            # df_counts_sum = []
+            df_chs = [] #  Store here all channels for the same stream
+            for channel_idx in stream_channels:
                 try:
                     df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
-                        js_td=self.js[str_timedomain][pkg_ch_idx],
-                        num_chs=num_chs,
+                        js_td=timedomain_data[channel_idx],
+                        num_chs=len(stream_channels),
                         verbose=False,
                     )
+                    df_chs.append(df_ch)
                 except Exception as e:
                     print(e)
 
-                df_counts["file_idx"] = package_idx
-                df_counts_sum.append(df_counts)
-                df_chs.append(df_ch)
+                # df_counts["file_idx"] = package_idx
+                # df_counts_sum.append(df_counts)
 
             df_concat = pd.concat(df_chs, axis=0)
             df_concat = df_concat.reset_index().pivot(

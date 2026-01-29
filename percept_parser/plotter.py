@@ -346,7 +346,6 @@ def plot_df_timeseries(
     else:
         str_prefix = "istd_"
     pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0].strftime(FILE_DATETIME_FORMAT)}_{df_plt.index[-1].strftime(FILE_DATETIME_FORMAT)}.pdf"
-    print("pdf_path", pdf_path)
     pdf_ = PdfPages(pdf_path)
     TIME_INTERVAL = 10
     samples = 250 * TIME_INTERVAL

@@ -416,8 +416,6 @@ class PatientStimSettingHistory:
         for session1_settings, session2_settings in self._get_session_pairs():
             for setting in session1_settings:
                 if setting not in session2_settings:
-                    # print(setting)
-                    # print(session2_settings)
                     warnings.warn(
                         f"Final group {setting.group_name} settings"
                         f"from {Interval(setting.start_time, setting.end_time)} "
