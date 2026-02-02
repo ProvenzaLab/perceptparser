@@ -298,7 +298,7 @@ def plot_df_timeseries(df_plt: pd.DataFrame, out_path: str, brain_sense_timedoma
         str_prefix = "bstd_"
     else:
         str_prefix = "istd_"
-    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0]}_{df_plt.index[-1]}.pdf"
+    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0].strftime('%Y-%m-%d_%H-%M-%S')}_{df_plt.index[-1].strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
     pdf_ = PdfPages(pdf_path)
     TIME_INTERVAL = 10
     samples = 250 * TIME_INTERVAL
