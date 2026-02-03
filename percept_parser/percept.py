@@ -4,15 +4,55 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import warnings
+from typing import Optional
 
 from pathlib import Path
 from .stim_settings import FileStimGroupSettings
+from .ecg_suppression import (
+    TemplateSubtractionRemover,
+    PerceiveToolboxRemover,
+    TemplateSubtractionConfig,
+    PerceiveToolboxConfig,
+)
 
 
 class PerceptParser:
-    def __init__(self, filename: str, verbose: bool = False):
+    def __init__(
+        self,
+        filename: str,
+        verbose: bool = False,
+        ecg_method: Optional[str] = None,
+        ecg_params: Optional[dict] = None,
+    ):
+        """
+        Parses Percept JSON reports into pandas DataFrames.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON report file.
+        verbose : bool, optional
+            If True, prints progress and info messages. Default is False.
+        ecg_method : str, optional
+            Method to use for ECG artifact removal. Options: "template", "perceive".
+            Default is None (no removal).
+        ecg_params : dict, optional
+            Dictionary of parameters to pass to the ECG removal configuration.
+            See `TemplateSubtractionConfig` and `PerceiveToolboxConfig` for available options.
+        """
         self.filename = filename
         self.verbose = verbose
+
+        self.ecg_remover = None
+        if ecg_method:
+            if ecg_method.lower() == "template":
+                config = TemplateSubtractionConfig(**(ecg_params or {}))
+                self.ecg_remover = TemplateSubtractionRemover(config)
+            elif ecg_method.lower() == "perceive":
+                config = PerceiveToolboxConfig(**(ecg_params or {}))
+                self.ecg_remover = PerceiveToolboxRemover(config)
+            else:
+                warnings.warn(f"Unknown ECG method: {ecg_method}")
 
         with open(filename, "r") as f:
             self.js = json.load(f)
@@ -467,5 +507,24 @@ class PerceptParser:
             df_concat = df_concat.reset_index().pivot(
                 index="Time", columns="Channel", values="Data"
             )
+
+            if self.ecg_remover is not None:
+                try:
+                    # Get fs from the first package in this stream/session
+                    fs = 250  # Default
+                    if len(idx_package_chs) > 0:
+                        fs = self.js[str_timedomain][idx_package_chs[0]][
+                            "SampleRateInHz"
+                        ]
+
+                    if self.verbose:
+                        print(
+                            f"Applying ECG cleaning ({type(self.ecg_remover).__name__}) to stream {package_idx}, fs={fs}"
+                        )
+
+                    df_concat = self.ecg_remover.clean(df_concat, fs)
+                except Exception as e:
+                    print(f"Error applying ECG removal: {e}")
+
             df_.append(df_concat)
         return df_
