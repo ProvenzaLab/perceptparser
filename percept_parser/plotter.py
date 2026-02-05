@@ -37,7 +37,7 @@ def brain_sense_lfp_plot(
     plt.plot(df.index, df["Right_Power"], label="Right LFP", alpha=0.8)
     plt.xlabel("Time")
     plt.ylabel("LFP Power [a.u.]")
-    plt.title(f"All samples - clipped 0.999 quantile")
+    plt.title(f"All samples - clipped {quantile} quantile")
     y_max = df[["Left_Power", "Right_Power"]].quantile(quantile).max()
     plt.ylim(0, y_max)
     plt.legend()
@@ -47,10 +47,10 @@ def brain_sense_lfp_plot(
     plt.plot(df.index, df["Right_Power"], label="Right LFP", alpha=0.8)
     plt.xlabel("Time")
     plt.ylabel("LFP Power [a.u.]")
-    plt.title(f"First 1000 samples")
+    plt.title(f"Up to first 1000 samples - clipped {quantile} quantile")
     y_max = df[["Left_Power", "Right_Power"]].quantile(quantile).max()
     plt.ylim(0, y_max)
-    plt.xlim(df.index[0], df.index[1000])
+    plt.xlim(df.index[0], df.index[min(1000, len(df.index)-1)])
     plt.legend()
     plt.tight_layout()
     plt.savefig(f"{out_path}/lfp_power_plot.pdf")
@@ -345,8 +345,7 @@ def plot_df_timeseries(
         str_prefix = "bstd_"
     else:
         str_prefix = "istd_"
-    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0].strftime(FILE_DATETIME_FORMAT)}_{df_plt.index[-1].strftime(FILE_DATETIME_FORMAT)}.pdf"
-    print("pdf_path", pdf_path)
+    pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0].strftime('%Y-%m-%d_%H-%M-%S')}_{df_plt.index[-1].strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
     pdf_ = PdfPages(pdf_path)
     TIME_INTERVAL = 10
     samples = 250 * TIME_INTERVAL

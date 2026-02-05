@@ -20,7 +20,7 @@ uv pip install percept-parser
 Basic Usage:
 
 ```python
-from percept import PerceptParser
+from percept_parser.percept import PerceptParser
 import os
 
 # Define your session report JSON file
