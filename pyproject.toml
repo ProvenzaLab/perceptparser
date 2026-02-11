@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "my-parser-scripts"
 version = "0.1.0"
@@ -15,4 +19,7 @@ dependencies = [
     "tqdm>=4.67.1",
 ]
 [tool.setuptools]
-py-modules = []
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["percept_parser*"]
