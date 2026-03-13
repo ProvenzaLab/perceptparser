@@ -82,6 +82,10 @@ if __name__ == "__main__":
     parser.add_argument("json_filepath", help="Path to the JSON file to anonymize")
     parser.add_argument("--output", help="Path to save the anonymized JSON file")
     parser.add_argument("-v", "--verbose", help="Verbose output", action="store_true")
+    parser.add_argument(
+        "--skip-dates",
+        help="Skip obfuscating dates. This may make PHI removal incomplete!",
+        action="store_true")
 
     args = parser.parse_args()
 
