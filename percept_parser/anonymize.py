@@ -26,20 +26,25 @@ def deep_update(full_key, new_value, json_data, verbose=True):
     else:
         deep_update(full_key[1:], new_value, json_data[full_key[0]])
 
+def remove_by_key(key_regex, json_data, new_value="REMOVED", verbose=True):
+    """Function to remove a key from a JSON object"""
+    for full_key, value in recurse(json_data):
+        if key_regex.match(full_key[-1]):
+            deep_update(full_key, new_value, json_data, verbose=verbose)
 
 def remove_serial(json_data, verbose=True):
     """Function to search for and remove device serial numbers"""
-    for full_key, value in recurse(json_data):
-        if 'serialnumber' in full_key[-1].lower():
-            deep_update(full_key, "##########", json_data, verbose=verbose)
+    serial_re = re.compile(r'[sS]erial[nN]umber')
+    remove_by_key(serial_re, json_data, new_value="##########", verbose=verbose)
 
 
 def remove_patient_info(json_data, verbose=True):
     """Function to search for and remove a patient name"""
     name_re = re.compile(r'[pP]atient.*[nN]ame')
-    for full_key, value in recurse(json_data):
-        if name_re.match(full_key[-1]):
-            deep_update(full_key, "REMOVED", json_data, verbose=verbose)
+    remove_by_key(name_re, json_data, verbose=verbose)
+
+    dob_re = re.compile(r'[pP]atient.*[bB]irth')
+    remove_by_key(dob_re, json_data, verbose=verbose)
 
 
 def obfuscate_dates(json_data, verbose=True, shift=None):
@@ -63,7 +68,7 @@ def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, ve
         remove_serial(json_data, verbose=verbose)
     if name:
         if verbose:
-            print(f'Removing patient name info')
+            print(f'Removing patient personal info')
         remove_patient_info(json_data, verbose=verbose)
     if dates:
         if verbose:
