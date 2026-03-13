@@ -42,9 +42,9 @@ def remove_patient_info(json_data, verbose=True):
             deep_update(full_key, "REMOVED", json_data, verbose=verbose)
 
 
-def obfuscate_dates(json_data, verbose=True):
+def obfuscate_dates(json_data, verbose=True, shift=None):
     """Function to obfuscate all other dates by adding a random shift"""
-    date_shift = pd.Timedelta(seconds=random.randint(-10**8, 10**8))
+    date_shift = pd.Timedelta(seconds=random.randint(-10**8, 10**8)) if shift is None else shift
     date_search = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')
     for full_key, value in recurse(json_data):
         if isinstance(value, str) and date_search.search(value):
@@ -52,7 +52,7 @@ def obfuscate_dates(json_data, verbose=True):
             deep_update(full_key, new_datetime, json_data, verbose=verbose)
 
 
-def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, verbose=True):
+def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, verbose=True, shift=None):
     """Function to anonymize a JSON object"""
     with open(json_filepath, 'r') as file:
         json_data = json.load(file)
@@ -68,7 +68,7 @@ def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, ve
     if dates:
         if verbose:
             print(f'Obfuscating all dates')
-        obfuscate_dates(json_data, verbose=verbose)
+        obfuscate_dates(json_data, verbose=verbose, shift=shift)
 
     output = json_filepath if output is None else output
     with open(output, 'w') as file:
@@ -86,7 +86,11 @@ if __name__ == "__main__":
         "--skip-dates",
         help="Skip obfuscating dates. This may make PHI removal incomplete!",
         action="store_true")
+    parser.add_argument(
+        "--time-shift", type=int,
+        help="Manually selected timeshift in seconds. This will override the automatic random timeshift"
+    )
 
     args = parser.parse_args()
-
-    anonymize(args.json_filepath, output=args.output, verbose=args.verbose)
+    manual_shift = pd.Timedelta(seconds=args.time_shift) if args.time_shift else None
+    anonymize(args.json_filepath, output=args.output, verbose=args.verbose, shift=manual_shift)
