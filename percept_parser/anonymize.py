@@ -6,9 +6,6 @@ from pathlib import Path
 import pandas as pd
 
 
-
-
-
 def recurse(json_data, parent_key=None):
     """Function to recursively iterate through a JSON object"""
     if parent_key is None:
@@ -83,11 +80,13 @@ def anonymize(json_filepath, output=None, out_dir=None, serial=True, name=True, 
     if output is None:
         json_filepath = Path(json_filepath)
         filename = json_filepath.stem
-        str_date = re.search('\d{8}T\d{6}', filename)
+        str_date = re.search(r'\d{8}T\d{6}', filename)
         dest_dir = Path(out_dir) if out_dir is not None else json_filepath.parent
         if dates and str_date:
             new_date = pd.Timestamp(str_date.group()) + shift_used
             new_date_str = new_date.strftime('%Y%m%dT%H%M%S')
+            if verbose:
+                print(f'Shifting date in filename: {str_date.group()} --> {new_date_str}')
             filename = f'Report_Json_Session_Report_{new_date_str}_anonymized.json'
             output = dest_dir / filename
         else:
@@ -95,6 +94,8 @@ def anonymize(json_filepath, output=None, out_dir=None, serial=True, name=True, 
     else:
         output = Path(output)
     with open(output, 'w') as file:
+        if verbose:
+            print(f'Writing anonymized JSON to {output}')
         json.dump(json_data, file, indent=4)
     return output
 
