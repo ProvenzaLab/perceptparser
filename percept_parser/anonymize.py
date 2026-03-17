@@ -66,7 +66,7 @@ def obfuscate_dates(json_data, verbose=True, shift=None):
     return date_shift
 
 
-def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, verbose=True, shift=None):
+def anonymize(json_filepath, output=None, out_dir=None, serial=True, name=True, dates=True, verbose=True, shift=None):
     """Function to anonymize a JSON object"""
     with open(json_filepath, 'r') as file:
         json_data = json.load(file)
@@ -84,17 +84,19 @@ def anonymize(json_filepath, output=None, serial=True, name=True, dates=True, ve
         json_filepath = Path(json_filepath)
         filename = json_filepath.stem
         str_date = re.search('\d{8}T\d{6}', filename)
+        dest_dir = Path(out_dir) if out_dir is not None else json_filepath.parent
         if dates and str_date:
-            new_date = pd.Timestamp(str(str_date)) + shift_used
+            new_date = pd.Timestamp(str_date.group()) + shift_used
             new_date_str = new_date.strftime('%Y%m%dT%H%M%S')
             filename = f'Report_Json_Session_Report_{new_date_str}_anonymized.json'
-            output = json_filepath.parent / filename
+            output = dest_dir / filename
         else:
-            output = str(json_filepath).replace('.json', '_anonymized.json')
+            output = dest_dir / (json_filepath.stem + '_anonymized.json')
     else:
-        output = output
+        output = Path(output)
     with open(output, 'w') as file:
         json.dump(json_data, file, indent=4)
+    return output
 
 
 if __name__ == "__main__":
