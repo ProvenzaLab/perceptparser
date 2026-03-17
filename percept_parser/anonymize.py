@@ -32,7 +32,7 @@ def deep_update(full_key, new_value, json_data, verbose=True):
 def remove_by_key(key_regex, json_data, new_value="REMOVED", verbose=True):
     """Function to remove a key from a JSON object"""
     for full_key, value in recurse(json_data):
-        if key_regex.match(full_key[-1]):
+        if key_regex.search(full_key[-1]):
             deep_update(full_key, new_value, json_data, verbose=verbose)
 
 def remove_serial(json_data, verbose=True):
