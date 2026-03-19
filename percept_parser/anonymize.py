@@ -52,14 +52,30 @@ def remove_patient_info(json_data, verbose=True):
     remove_by_key(dob_re, json_data, verbose=verbose)
 
 
-def obfuscate_dates(json_data, verbose=True, shift=None):
-    """Function to obfuscate all other dates by adding a random shift"""
-    date_shift = pd.Timedelta(seconds=random.randint(-10**8, 10**8)) if shift is None else shift
-    date_search = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')
+def find_and_replace_values(json_data, search_key, replace_func, verbose=True):
+    """Function to search for and replace values in a JSON object"""
+    search = re.compile(search_key)
     for full_key, value in recurse(json_data):
-        if isinstance(value, str) and date_search.search(value):
-            new_datetime = (pd.to_datetime(value) + date_shift).strftime('%Y-%m-%dT%H:%M:%SZ')
-            deep_update(full_key, new_datetime, json_data, verbose=verbose)
+        if isinstance(value, str) and search.search(value):
+            deep_update(full_key, replace_func(value), json_data, verbose=verbose)
+
+def obfuscate_dates(json_data, verbose=True, shift=None):
+    """
+    Function to obfuscate all dates by adding a random shift
+    We need to run twice since there are two different date formats used in the file
+    """
+    date_shift = pd.Timedelta(seconds=random.randint(-10**8, 10**8)) if shift is None else shift
+
+    # This is the format used in the metadata fields
+    re_key = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z'
+    shift_func = lambda dt: (pd.to_datetime(dt) + date_shift).strftime('%Y-%m-%dT%H:%M:%SZ')
+    find_and_replace_values(json_data, re_key, shift_func, verbose=verbose)
+
+    # This is the format used in the actual data timestamps
+    re_key = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z'
+    shift_func = lambda dt: (pd.to_datetime(dt) + date_shift).strftime('%Y-%m-%dT%H:%M:%S.%lZ')
+    find_and_replace_values(json_data, re_key, shift_func, verbose=verbose)
+
     return date_shift
 
 
