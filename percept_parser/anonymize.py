@@ -8,14 +8,24 @@ import pandas as pd
 
 def recurse(json_data, parent_key=None):
     """Function to recursively iterate through a JSON object"""
+
     if parent_key is None:
         parent_key = []
-    for key, value in json_data.items():
-        full_key = parent_key + [key]
-        if isinstance(value, dict):
+    elif parent_key[-1] == 'Groups':
+            pass
+
+    if isinstance(json_data, dict):
+        for key, value in json_data.items():
+            full_key = parent_key + [key]
             yield from recurse(value, full_key)
-        else:
-            yield full_key, value
+    elif isinstance(json_data, list):
+        for i, item in enumerate(json_data):
+            full_key = parent_key + [i]
+            yield from recurse(item, full_key)
+    else:
+        yield parent_key, json_data
+
+
 
 def deep_update(full_key, new_value, json_data, verbose=True):
     """Function to update the value for a key deep in a JSON object"""
@@ -29,7 +39,7 @@ def deep_update(full_key, new_value, json_data, verbose=True):
 def remove_by_key(key_regex, json_data, new_value="REMOVED", verbose=True):
     """Function to remove a key from a JSON object"""
     for full_key, value in recurse(json_data):
-        if key_regex.search(full_key[-1]):
+        if isinstance(full_key[-1], str) and key_regex.search(full_key[-1]):
             deep_update(full_key, new_value, json_data, verbose=verbose)
 
 def remove_serial(json_data, verbose=True):
@@ -56,6 +66,8 @@ def find_and_replace_values(json_data, search_key, replace_func, verbose=True):
     """Function to search for and replace values in a JSON object"""
     search = re.compile(search_key)
     for full_key, value in recurse(json_data):
+        if isinstance(value, str) and ".000Z" in value:
+            pass
         if isinstance(value, str) and search.search(value):
             deep_update(full_key, replace_func(value), json_data, verbose=verbose)
 
@@ -66,14 +78,21 @@ def obfuscate_dates(json_data, verbose=True, shift=None):
     """
     date_shift = pd.Timedelta(seconds=random.randint(-10**8, 10**8)) if shift is None else shift
 
+    if verbose:
+        print(f'Obfuscating metadata dates')
     # This is the format used in the metadata fields
     re_key = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z'
     shift_func = lambda dt: (pd.to_datetime(dt) + date_shift).strftime('%Y-%m-%dT%H:%M:%SZ')
     find_and_replace_values(json_data, re_key, shift_func, verbose=verbose)
 
+    if verbose:
+        print(f'Obfuscating data timestamps')
     # This is the format used in the actual data timestamps
     re_key = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z'
-    shift_func = lambda dt: (pd.to_datetime(dt) + date_shift).strftime('%Y-%m-%dT%H:%M:%S.%lZ')
+    def shift_func(dt):
+        new_dt = pd.to_datetime(dt) + date_shift
+        new_str = new_dt.strftime(f'%Y-%m-%dT%H:%M:%S.{int(new_dt.microsecond/10**3):03d}Z')
+        return new_str
     find_and_replace_values(json_data, re_key, shift_func, verbose=verbose)
 
     return date_shift
