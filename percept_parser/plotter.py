@@ -338,7 +338,7 @@ def plot_time_domain_ranges(dfs_: list[pd.DataFrame], out_path: str):
 
 
 def plot_df_timeseries(
-    df_plt: pd.DataFrame, out_path: str, brain_sense_timedomain: bool = True
+    df_plt: pd.DataFrame, out_path: str, brain_sense_timedomain: bool = True, FILTER=False, fs=250, TIME_INTERVAL=10
 ):
     # df_plt = dfs_[15]
     if brain_sense_timedomain:
@@ -347,10 +347,8 @@ def plot_df_timeseries(
         str_prefix = "istd_"
     pdf_path = f"{out_path}/{str_prefix}{df_plt.index[0].strftime('%Y-%m-%d_%H-%M-%S')}_{df_plt.index[-1].strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
     pdf_ = PdfPages(pdf_path)
-    TIME_INTERVAL = 10
+    
     samples = 250 * TIME_INTERVAL
-    fs = 250
-    FILTER = False
     df_plt["idx_counter"] = np.arange(df_plt.shape[0]) // samples
     chs = df_plt.columns[0:2]  # Exclude 'timestamp' and 'idx_counter'
     for idx_cnt in tqdm(df_plt["idx_counter"].unique()):
@@ -370,7 +368,7 @@ def plot_df_timeseries(
                 data_filtered = mne.filter.filter_data(
                     data_raw,
                     sfreq=fs,
-                    l_freq=105,
+                    l_freq=None,
                     h_freq=95,
                     method="iir",
                     verbose=False,
