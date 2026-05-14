@@ -7,7 +7,7 @@ import warnings
 from typing import Optional
 
 from pathlib import Path
-from .stim_settings import FileStimGroupSettings
+from .stim_settings import FileStimGroupSettings, get_session_time_shift
 from .ecg_suppression import (
     TemplateSubtractionRemover,
     PerceiveToolboxRemover,
@@ -57,7 +57,8 @@ class PerceptParser:
         with open(filename, "r") as f:
             self.js = json.load(f)
 
-        self.session_date = pd.Timestamp(self.js["SessionDate"])
+        self.time_drift = get_session_time_shift(self.js)
+        self.session_date = pd.Timestamp(self.js['SessionDate'])
 
         self.lead_location = (
             self.js["LeadConfiguration"]["Final"][0]["LeadLocation"]
@@ -80,6 +81,11 @@ class PerceptParser:
             print(f"Error initializing stim settings: {e}")
             self.stim_settings = None
         print(f"{filename}: {self.session_date} - {self.lead_location}")
+
+    def _annotate_time_shift(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df["TimeShift"] = self.time_drift
+        return df
 
     def parse_all(self, out_path: str = "sub", plot: bool = False):
         if plot:
@@ -261,9 +267,9 @@ class PerceptParser:
             ]
         )
 
-        df["Time"] = pd.to_datetime(df["Time"])  # Vectorized conversion
-        df = df.set_index("Time").sort_index()  # Data was likely already sorted
-        return df
+        df["Time"] = pd.to_datetime(df["Time"]) - self.time_drift  # Correct for time drift between IPG and tablet
+        df["TimeShift"] = self.time_drift
+        return df.set_index("Time").sort_index()  # Data was likely already sorted
 
     def parse_brain_sense_lfp(self):
         if "BrainSenseLfp" not in self.js:
@@ -297,6 +303,8 @@ class PerceptParser:
             df_stream["Time"] = first_packet_time + pd.to_timedelta(
                 df_stream["TicksInMses"].diff().fillna(0).cumsum(), unit="ms"
             )
+            df_stream["Time"] -= self.time_drift  # Correct for time drift between IPG and tablet
+            df_stream["TimeShift"] = self.time_drift
 
             # Discard TicksInMses
             df_idx.append(df_stream.drop(columns=["TicksInMses"]))
@@ -441,6 +449,8 @@ class PerceptParser:
                 "Data": TimeDomainData,
             }
         )
+        df_ch["Time"] -= self.time_drift  # Correct for time drift between IPG and tablet
+        df_ch["TimeShift"] = self.time_drift
         df_ch = df_ch.set_index("Time")
 
         df_ch = df_ch.resample(f"{int(1000 / fs)}ms").mean()
@@ -525,6 +535,8 @@ class PerceptParser:
                     df_concat = self.ecg_remover.clean(df_concat, fs)
                 except Exception as e:
                     print(f"Error applying ECG removal: {e}")
+
+            df_concat["TimeShift"] = self.time_drift
 
             df_.append(df_concat)
         return df_
