@@ -58,6 +58,7 @@ class PerceptParser:
             self.js = json.load(f)
 
         self.time_drift: pd.Timedelta = get_session_time_shift(self.js)
+        self.session_end_date_missing = pd.isna(self.time_drift)
         self.session_date = pd.Timestamp(self.js['SessionDate'])
 
         self.lead_location = (
@@ -87,6 +88,10 @@ class PerceptParser:
         df = df.copy()
         df["TimeShift"] = self.time_drift
         return df
+
+    def _safe_time_delta(self) -> pd.Timedelta:
+        """Return time_drift, or 0 if it's NaT (missing SessionEndDate)."""
+        return self.time_drift if not pd.isna(self.time_drift) else pd.Timedelta(0)
 
     def parse_all(self, out_path: str = "sub", plot: bool = False):
         if plot:
@@ -268,7 +273,7 @@ class PerceptParser:
             ]
         )
 
-        df["Time"] = pd.to_datetime(df["Time"]) - self.time_drift  # Correct for time drift between IPG and tablet
+        df["Time"] = pd.to_datetime(df["Time"]) - self._safe_time_delta()  # Correct for time drift between IPG and tablet
         df["TimeShift"] = self.time_drift
         return df.set_index("Time").sort_index()  # Data was likely already sorted
 
@@ -304,7 +309,7 @@ class PerceptParser:
             df_stream["Time"] = first_packet_time + pd.to_timedelta(
                 df_stream["TicksInMses"].diff().fillna(0).cumsum(), unit="ms"
             )
-            df_stream["Time"] -= self.time_drift  # Correct for time drift between IPG and tablet
+            df_stream["Time"] -= self._safe_time_delta()  # Correct for time drift between IPG and tablet
             df_stream["TimeShift"] = self.time_drift
 
             # Discard TicksInMses
@@ -450,7 +455,7 @@ class PerceptParser:
                 "Data": TimeDomainData,
             }
         )
-        df_ch["Time"] -= self.time_drift  # Correct for time drift between IPG and tablet
+        df_ch["Time"] -= self._safe_time_delta()  # Correct for time drift between IPG and tablet
         df_ch["TimeShift"] = self.time_drift
 
         # Ensure Time is sorted

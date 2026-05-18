@@ -8,11 +8,15 @@ from pathlib import Path
 
 
 def get_session_time_shift(data: dict) -> pd.Timedelta:
-    """Return the offset needed to align device timestamps to SessionEndDate."""
+    """Return the offset needed to align device timestamps to SessionEndDate.
+    
+    Returns NaT if SessionEndDate is missing or empty, which signals that the
+    time drift is unknown but should be treated as 0 during arithmetic operations.
+    """
     device_end = pd.Timestamp(data["DeviceInformation"]["Final"]["DeviceDateTime"])
     session_end = data.get("SessionEndDate")
     if session_end is None or session_end == "":
-        return pd.Timedelta(0)
+        return pd.NaT
 
     tablet_end = pd.Timestamp(session_end)
     return pd.to_timedelta(device_end - tablet_end)
@@ -21,6 +25,9 @@ def get_session_time_shift(data: dict) -> pd.Timedelta:
 def shift_timestamp(value, time_shift: pd.Timedelta):
     if value is None:
         return None
+    # If time_shift is NaT (missing SessionEndDate), treat it as 0
+    if pd.isna(time_shift):
+        return pd.Timestamp(value)
     return pd.Timestamp(value) - time_shift
 
 
