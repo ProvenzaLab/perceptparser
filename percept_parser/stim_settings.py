@@ -23,7 +23,7 @@ def get_session_time_shift(data: dict) -> pd.Timedelta:
 
 
 def shift_timestamp(value, time_shift: pd.Timedelta):
-    if value is None:
+    if value is None or value == "":
         return None
     # If time_shift is NaT (missing SessionEndDate), treat it as 0
     if pd.isna(time_shift):
@@ -198,7 +198,9 @@ class FileStimGroupSettings:
             ]
 
         self.group_changes = (
-            pd.DataFrame(active_group_changes)
+            pd.DataFrame(
+                active_group_changes, columns=["time", "old_group", "new_group"]
+            )
             .sort_values("time")
             .reset_index(drop=True)
         )
@@ -224,8 +226,9 @@ class FileStimGroupSettings:
         time_shift = get_session_time_shift(data)
 
         # ! DeviceInformation is only for the last clinical session
-        self.start_time = pd.Timestamp(data["SessionEndDate"])
-        self.end_time = pd.Timestamp(data["SessionEndDate"])
+        session_end = data.get("SessionEndDate") or data["SessionDate"]
+        self.start_time = shift_timestamp(session_end, time_shift)
+        self.end_time = shift_timestamp(session_end, time_shift)
 
         # ! "Groups" is also only for the last session
         # self.initial_settings = pd.DataFrame(
@@ -255,7 +258,7 @@ class FileStimGroupSettings:
         if "GroupHistory" not in data:
             raise ValueError("No GroupHistory found in data")
         for session in data["GroupHistory"]:
-            session_date = pd.Timestamp(session["SessionDate"])
+            session_date = shift_timestamp(session["SessionDate"], time_shift)
             for group in session["Groups"]:
                 group_settings: list[StimGroupSetting] = self._process_group(group)
                 for setting in group_settings:
