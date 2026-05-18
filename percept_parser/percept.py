@@ -80,7 +80,8 @@ class PerceptParser:
         except Exception as e:
             print(f"Error initializing stim settings: {e}")
             self.stim_settings = None
-        print(f"{filename}: {self.session_date} - {self.lead_location}")
+        if self.verbose:
+            print(f"{filename}: {self.session_date} - {self.lead_location}")
 
     def _annotate_time_shift(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -456,8 +457,6 @@ class PerceptParser:
         df_ch = df_ch.sort_values("Time")
 
         # Ensure it's actually datetime-like
-        print('time drift:', type(self.time_drift), self.time_drift)
-        print('time type:', type(df_ch["Time"].iloc[0]), df_ch["Time"].iloc[0])
         df_ch["Time"] = pd.to_datetime(df_ch["Time"])
 
         # Set index
@@ -519,9 +518,9 @@ class PerceptParser:
                     df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
                         js_td=self.js[str_timedomain][pkg_ch_idx],
                         num_chs=num_chs,
-                        verbose=False,
+                        verbose=self.verbose,
                     )
-                except UnboundLocalError as e:
+                except (UnboundLocalError, ValueError) as e:
                     print(e)
                     continue
 
@@ -530,7 +529,8 @@ class PerceptParser:
                 df_chs.append(df_ch)
 
             if len(df_chs) == 0:
-                print(f"No valid channels found for package {package_idx}, skipping.")
+                if self.verbose:
+                    print(f"No valid channels found for package {package_idx}, skipping.")
                 continue
 
             df_concat = pd.concat(df_chs, axis=0)
