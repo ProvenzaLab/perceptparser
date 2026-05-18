@@ -467,19 +467,16 @@ class PerceptParser:
         # Set index
         df_ch = df_ch.set_index("Time")
 
-        # Drop duplicate index entries (this is what resample really cares about)
-        df_ch = df_ch[~df_ch.index.duplicated(keep="first")]
-
         # Now resample
-        df_ch = df_ch.resample(f"{int(1000 / fs)}ms").mean()
+        df_channel = df_ch.resample(f"{int(1000 / fs)}ms").mean()
 
-        df_ch["Channel"] = ch_
+        df_channel["Channel"] = ch_
 
         if verbose:
             from matplotlib import pyplot as plt
 
             plt.subplot(1, 2, 1)
-            plt.plot(df_ch.query("Channel == @ch_")["Data"].iloc[-500:].values)
+            plt.plot(df_channel.query("Channel == @ch_")["Data"].iloc[-500:].values)
             plt.title(f"Corrected Channel {ch_} - TimeDomainData")
             plt.subplot(1, 2, 2)
             plt.plot(TimeDomainData[-500:])
@@ -487,7 +484,7 @@ class PerceptParser:
             plt.tight_layout()
             plt.xlabel("Samples")
 
-        return df_ch, df_counts, PACKAGE_LOSS_PRESENT
+        return df_channel, df_counts, PACKAGE_LOSS_PRESENT
 
     def read_timedomain_data(
         self, indefinite_streaming: bool = True
