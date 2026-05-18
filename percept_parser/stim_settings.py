@@ -226,9 +226,13 @@ class FileStimGroupSettings:
         time_shift = get_session_time_shift(data)
 
         # ! DeviceInformation is only for the last clinical session
-        session_end = data.get("SessionEndDate") or data["SessionDate"]
-        self.start_time = shift_timestamp(session_end, time_shift)
-        self.end_time = shift_timestamp(session_end, time_shift)
+        session_end = data.get("SessionEndDate")
+        if session_end in (None, ""):
+            self.start_time = pd.NaT
+            self.end_time = pd.NaT
+        else:
+            self.start_time = shift_timestamp(session_end, time_shift)
+            self.end_time = shift_timestamp(session_end, time_shift)
 
         # ! "Groups" is also only for the last session
         # self.initial_settings = pd.DataFrame(
@@ -554,7 +558,8 @@ class PatientStimSettingHistory:
 
             time_shift = get_session_time_shift(data)
             start_time = pd.Timestamp(data["SessionDate"])
-            end_time = pd.Timestamp(data["SessionEndDate"])
+            session_end = data.get("SessionEndDate")
+            end_time = pd.NaT if session_end in (None, "") else pd.Timestamp(session_end)
             interval = Interval(start_time, end_time)
             file_settings = []
             for state in ["Initial", "Final"]:
