@@ -10,8 +10,12 @@ from pathlib import Path
 def get_session_time_shift(data: dict) -> pd.Timedelta:
     """Return the offset needed to align device timestamps to SessionEndDate."""
     device_end = pd.Timestamp(data["DeviceInformation"]["Final"]["DeviceDateTime"])
-    tablet_end = pd.Timestamp(data["SessionEndDate"])
-    return device_end - tablet_end
+    session_end = data.get("SessionEndDate")
+    if session_end is None or session_end == "":
+        return pd.Timedelta(0)
+
+    tablet_end = pd.Timestamp(session_end)
+    return pd.to_timedelta(device_end - tablet_end)
 
 
 def shift_timestamp(value, time_shift: pd.Timedelta):

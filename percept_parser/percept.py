@@ -57,7 +57,7 @@ class PerceptParser:
         with open(filename, "r") as f:
             self.js = json.load(f)
 
-        self.time_drift = get_session_time_shift(self.js)
+        self.time_drift: pd.Timedelta = get_session_time_shift(self.js)
         self.session_date = pd.Timestamp(self.js['SessionDate'])
 
         self.lead_location = (
@@ -451,9 +451,24 @@ class PerceptParser:
         )
         df_ch["Time"] -= self.time_drift  # Correct for time drift between IPG and tablet
         df_ch["TimeShift"] = self.time_drift
+
+        # Ensure Time is sorted
+        df_ch = df_ch.sort_values("Time")
+
+        # Ensure it's actually datetime-like
+        print('time drift:', type(self.time_drift), self.time_drift)
+        print('time type:', type(df_ch["Time"].iloc[0]), df_ch["Time"].iloc[0])
+        df_ch["Time"] = pd.to_datetime(df_ch["Time"])
+
+        # Set index
         df_ch = df_ch.set_index("Time")
 
+        # Drop duplicate index entries (this is what resample really cares about)
+        df_ch = df_ch[~df_ch.index.duplicated(keep="first")]
+
+        # Now resample
         df_ch = df_ch.resample(f"{int(1000 / fs)}ms").mean()
+
         df_ch["Channel"] = ch_
 
         if verbose:
@@ -506,12 +521,17 @@ class PerceptParser:
                         num_chs=num_chs,
                         verbose=False,
                     )
-                except Exception as e:
+                except UnboundLocalError as e:
                     print(e)
+                    continue
 
                 df_counts["file_idx"] = package_idx
                 df_counts_sum.append(df_counts)
                 df_chs.append(df_ch)
+
+            if len(df_chs) == 0:
+                print(f"No valid channels found for package {package_idx}, skipping.")
+                continue
 
             df_concat = pd.concat(df_chs, axis=0)
             df_concat = df_concat.reset_index().pivot(
