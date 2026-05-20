@@ -8,6 +8,7 @@ from typing import Optional
 
 from pathlib import Path
 from .stim_settings import FileStimGroupSettings
+from .anonymize import anonymize as _anonymize_file
 from .ecg_suppression import (
     TemplateSubtractionRemover,
     PerceiveToolboxRemover,
@@ -23,6 +24,8 @@ class PerceptParser:
         verbose: bool = False,
         ecg_method: Optional[str] = None,
         ecg_params: Optional[dict] = None,
+        out_path: Optional[str] = None,
+        anonymize: bool = False,
     ):
         """
         Parses Percept JSON reports into pandas DataFrames.
@@ -39,9 +42,23 @@ class PerceptParser:
         ecg_params : dict, optional
             Dictionary of parameters to pass to the ECG removal configuration.
             See `TemplateSubtractionConfig` and `PerceiveToolboxConfig` for available options.
+        out_path : str, optional
+            Output directory for parsed CSVs. Default is None.
+        anonymize : bool, optional
+            If True, anonymizes the JSON file before parsing. The anonymized copy is saved
+            to `out_path` if provided, otherwise alongside the original file.
+            `self.filename` is updated to point to the anonymized file. Default is False.
         """
-        self.filename = filename
+        self.out_path = out_path
         self.verbose = verbose
+
+        if anonymize:
+            if out_path is not None:
+                Path(out_path).mkdir(parents=True, exist_ok=True)
+            anonymized_path = _anonymize_file(filename, out_dir=out_path, verbose=verbose)
+            self.filename = str(anonymized_path)
+        else:
+            self.filename = filename
 
         self.ecg_remover = None
         if ecg_method:
@@ -54,7 +71,7 @@ class PerceptParser:
             else:
                 warnings.warn(f"Unknown ECG method: {ecg_method}")
 
-        with open(filename, "r") as f:
+        with open(self.filename, "r") as f:
             self.js = json.load(f)
 
         self.session_date = pd.Timestamp(self.js["SessionDate"])
@@ -79,9 +96,11 @@ class PerceptParser:
         except Exception as e:
             print(f"Error initializing stim settings: {e}")
             self.stim_settings = None
-        print(f"{filename}: {self.session_date} - {self.lead_location}")
+        print(f"{self.filename}: {self.session_date} - {self.lead_location}")
 
-    def parse_all(self, out_path: str = "sub", plot: bool = False):
+    def parse_all(self, out_path: Optional[str] = None, plot: bool = False):
+        if out_path is None:
+            out_path = self.out_path if self.out_path is not None else "sub"
         if plot:
             from percept_parser import plotter
 
