@@ -108,14 +108,18 @@ class PerceptParser:
         if not df_lfp_trend_logs.empty:
             if self.stim_settings is not None:
                 df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
-            df_lfp_trend_logs.to_csv(Path(out_path, "LFPTrendLogs.csv"), index=True)
+            df_lfp_trend_logs.to_parquet(
+                Path(out_path, "LFPTrendLogs.parquet"), index=True, engine="fastparquet"
+            )
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
 
         if not df_brainsense_lfp.empty:
             if self.stim_settings is not None:
                 df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
-            df_brainsense_lfp.to_csv(Path(out_path, "BrainSenseLfp.csv"), index=True)
+            df_brainsense_lfp.to_parquet(
+                Path(out_path, "BrainSenseLfp.parquet"), index=True, engine="fastparquet"
+            )
             if plot:
                 df_left = df_brainsense_lfp.query("Hemisphere == 'Left'")
                 df_right = df_brainsense_lfp.query("Hemisphere == 'Right'")
@@ -148,9 +152,10 @@ class PerceptParser:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
                 df_bs_td_i_pivot.attrs["TimeShift"] = self.time_drift
 
-                df_bs_td_i_pivot.to_csv(
-                    Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
+                df_bs_td_i_pivot.to_parquet(
+                    Path(out_path, f"BrainSenseTimeDomain_{str_idx}.parquet"),
                     index=True,
+                    engine="fastparquet",
                 )
                 if plot:
                     plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
@@ -183,9 +188,10 @@ class PerceptParser:
                     # set Time as index
                     df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
                 df_is_td_i_pivot.attrs["TimeShift"] = self.time_drift
-                df_is_td_i_pivot.to_csv(
-                    Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
+                df_is_td_i_pivot.to_parquet(
+                    Path(out_path, f"IndefiniteStreaming_{str_idx}.parquet"),
                     index=True,
+                    engine="fastparquet",
                 )
                 if plot:
                     plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
