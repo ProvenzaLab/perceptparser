@@ -89,6 +89,12 @@ class PerceptParser:
         df.attrs["TimeShift"] = self.time_drift
         return df
 
+    def _save_dataframe_with_attrs(self, df: pd.DataFrame, csv_path: Path):
+        df.to_csv(csv_path, index=True)
+        attrs_path = csv_path.with_suffix(csv_path.suffix + ".attrs.json")
+        with open(attrs_path, "w") as f:
+            json.dump(df.attrs, f, default=str, indent=2)
+
     def _safe_time_delta(self) -> pd.Timedelta:
         """Return time_drift, or 0 if it's NaT (missing SessionEndDate)."""
         return self.time_drift if not pd.isna(self.time_drift) else pd.Timedelta(0)
@@ -108,8 +114,8 @@ class PerceptParser:
         if not df_lfp_trend_logs.empty:
             if self.stim_settings is not None:
                 df_lfp_trend_logs = self._merge_stim_settings(df_lfp_trend_logs)
-            df_lfp_trend_logs.to_parquet(
-                Path(out_path, "LFPTrendLogs.parquet"), index=True, engine="fastparquet"
+            self._save_dataframe_with_attrs(
+                df_lfp_trend_logs, Path(out_path, "LFPTrendLogs.csv")
             )
             if plot:
                 plotter.lfptrendlog_plot(df_lfp_trend_logs, self, path_out=out_path)
@@ -117,8 +123,8 @@ class PerceptParser:
         if not df_brainsense_lfp.empty:
             if self.stim_settings is not None:
                 df_brainsense_lfp = self._merge_stim_settings(df_brainsense_lfp)
-            df_brainsense_lfp.to_parquet(
-                Path(out_path, "BrainSenseLfp.parquet"), index=True, engine="fastparquet"
+            self._save_dataframe_with_attrs(
+                df_brainsense_lfp, Path(out_path, "BrainSenseLfp.csv")
             )
             if plot:
                 df_left = df_brainsense_lfp.query("Hemisphere == 'Left'")
@@ -152,10 +158,9 @@ class PerceptParser:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
                 df_bs_td_i_pivot.attrs["TimeShift"] = self.time_drift
 
-                df_bs_td_i_pivot.to_parquet(
-                    Path(out_path, f"BrainSenseTimeDomain_{str_idx}.parquet"),
-                    index=True,
-                    engine="fastparquet",
+                self._save_dataframe_with_attrs(
+                    df_bs_td_i_pivot,
+                    Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
                 )
                 if plot:
                     plotter.plot_df_timeseries(df_bs_td_i, out_path=out_path)
@@ -188,10 +193,9 @@ class PerceptParser:
                     # set Time as index
                     df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
                 df_is_td_i_pivot.attrs["TimeShift"] = self.time_drift
-                df_is_td_i_pivot.to_parquet(
-                    Path(out_path, f"IndefiniteStreaming_{str_idx}.parquet"),
-                    index=True,
-                    engine="fastparquet",
+                self._save_dataframe_with_attrs(
+                    df_is_td_i_pivot,
+                    Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                 )
                 if plot:
                     plotter.plot_df_timeseries(df_is_td_i, out_path=out_path)
