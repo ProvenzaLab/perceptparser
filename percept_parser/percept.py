@@ -7,7 +7,7 @@ import warnings
 from typing import Optional
 
 from pathlib import Path
-from .stim_settings import FileStimGroupSettings
+from .stim_settings import FileStimGroupSettings, get_session_time_shift
 from .ecg_suppression import (
     TemplateSubtractionRemover,
     PerceiveToolboxRemover,
@@ -57,7 +57,9 @@ class PerceptParser:
         with open(filename, "r") as f:
             self.js = json.load(f)
 
-        self.session_date = pd.Timestamp(self.js["SessionDate"])
+        self.time_drift: pd.Timedelta = get_session_time_shift(self.js)
+        self.session_end_date_missing = pd.isna(self.time_drift)
+        self.session_date = pd.Timestamp(self.js['SessionDate'])
 
         self.lead_location = (
             self.js["LeadConfiguration"]["Final"][0]["LeadLocation"]
@@ -79,7 +81,17 @@ class PerceptParser:
         except Exception as e:
             print(f"Error initializing stim settings: {e}")
             self.stim_settings = None
-        print(f"{filename}: {self.session_date} - {self.lead_location}")
+        if self.verbose:
+            print(f"{filename}: {self.session_date} - {self.lead_location}")
+
+    def _annotate_time_shift(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df.attrs["TimeShift"] = self.time_drift
+        return df
+
+    def _safe_time_delta(self) -> pd.Timedelta:
+        """Return time_drift, or 0 if it's NaT (missing SessionEndDate)."""
+        return self.time_drift if not pd.isna(self.time_drift) else pd.Timedelta(0)
 
     def parse_all(self, out_path: str = "sub", plot: bool = False):
         if plot:
@@ -134,6 +146,7 @@ class PerceptParser:
                 )
                 if self.stim_settings is not None:
                     df_bs_td_i_pivot = self._merge_stim_settings(df_bs_td_i_pivot)
+                df_bs_td_i_pivot.attrs["TimeShift"] = self.time_drift
 
                 df_bs_td_i_pivot.to_csv(
                     Path(out_path, f"BrainSenseTimeDomain_{str_idx}.csv"),
@@ -169,6 +182,7 @@ class PerceptParser:
                 else:
                     # set Time as index
                     df_is_td_i_pivot = df_is_td_i_pivot.set_index("Time")
+                df_is_td_i_pivot.attrs["TimeShift"] = self.time_drift
                 df_is_td_i_pivot.to_csv(
                     Path(out_path, f"IndefiniteStreaming_{str_idx}.csv"),
                     index=True,
@@ -229,9 +243,11 @@ class PerceptParser:
             )
 
         # Drop uninsteresting columns
-        return samples_with_group.set_index("Time").drop(
+        samples_with_group = samples_with_group.set_index("Time").drop(
             columns=["start_time", "end_time", "filename"]
         )
+        samples_with_group.attrs["TimeShift"] = self.time_drift
+        return samples_with_group
 
     def parse_lfp_trend_logs(
         self,
@@ -261,9 +277,9 @@ class PerceptParser:
             ]
         )
 
-        df["Time"] = pd.to_datetime(df["Time"])  # Vectorized conversion
+        df["Time"] = pd.to_datetime(df["Time"]) - self._safe_time_delta()  # Correct for time drift between IPG and tablet
         df = df.set_index("Time").sort_index()  # Data was likely already sorted
-        return df
+        return self._annotate_time_shift(df)
 
     def parse_brain_sense_lfp(self):
         if "BrainSenseLfp" not in self.js:
@@ -297,9 +313,10 @@ class PerceptParser:
             df_stream["Time"] = first_packet_time + pd.to_timedelta(
                 df_stream["TicksInMses"].diff().fillna(0).cumsum(), unit="ms"
             )
+            df_stream["Time"] -= self._safe_time_delta()  # Correct for time drift between IPG and tablet
 
             # Discard TicksInMses
-            df_idx.append(df_stream.drop(columns=["TicksInMses"]))
+            df_idx.append(self._annotate_time_shift(df_stream.drop(columns=["TicksInMses"])))
 
         return (
             pd.concat(df_idx, ignore_index=True).set_index("Time").sort_index()
@@ -441,16 +458,28 @@ class PerceptParser:
                 "Data": TimeDomainData,
             }
         )
+        df_ch["Time"] -= self._safe_time_delta()  # Correct for time drift between IPG and tablet
+
+        # Ensure Time is sorted
+        df_ch = df_ch.sort_values("Time")
+
+        # Ensure it's actually datetime-like
+        df_ch["Time"] = pd.to_datetime(df_ch["Time"])
+
+        # Set index
         df_ch = df_ch.set_index("Time")
 
-        df_ch = df_ch.resample(f"{int(1000 / fs)}ms").mean()
-        df_ch["Channel"] = ch_
+        # Now resample
+        df_channel = df_ch.resample(f"{int(1000 / fs)}ms").mean()
+
+        df_channel["Channel"] = ch_
+        df_channel.attrs["TimeShift"] = self.time_drift
 
         if verbose:
             from matplotlib import pyplot as plt
 
             plt.subplot(1, 2, 1)
-            plt.plot(df_ch.query("Channel == @ch_")["Data"].iloc[-500:].values)
+            plt.plot(df_channel.query("Channel == @ch_")["Data"].iloc[-500:].values)
             plt.title(f"Corrected Channel {ch_} - TimeDomainData")
             plt.subplot(1, 2, 2)
             plt.plot(TimeDomainData[-500:])
@@ -458,7 +487,7 @@ class PerceptParser:
             plt.tight_layout()
             plt.xlabel("Samples")
 
-        return df_ch, df_counts, PACKAGE_LOSS_PRESENT
+        return df_channel, df_counts, PACKAGE_LOSS_PRESENT
 
     def read_timedomain_data(
         self, indefinite_streaming: bool = True
@@ -494,14 +523,20 @@ class PerceptParser:
                     df_ch, df_counts, PACKAGE_LOSS_PRESENT = self.get_time_stream(
                         js_td=self.js[str_timedomain][pkg_ch_idx],
                         num_chs=num_chs,
-                        verbose=False,
+                        verbose=self.verbose,
                     )
-                except Exception as e:
+                except (UnboundLocalError, ValueError) as e:
                     print(e)
+                    continue
 
                 df_counts["file_idx"] = package_idx
                 df_counts_sum.append(df_counts)
                 df_chs.append(df_ch)
+
+            if len(df_chs) == 0:
+                if self.verbose:
+                    print(f"No valid channels found for package {package_idx}, skipping.")
+                continue
 
             df_concat = pd.concat(df_chs, axis=0)
             df_concat = df_concat.reset_index().pivot(
@@ -525,6 +560,8 @@ class PerceptParser:
                     df_concat = self.ecg_remover.clean(df_concat, fs)
                 except Exception as e:
                     print(f"Error applying ECG removal: {e}")
+
+            df_concat.attrs["TimeShift"] = self.time_drift
 
             df_.append(df_concat)
         return df_

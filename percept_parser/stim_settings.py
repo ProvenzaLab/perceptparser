@@ -7,6 +7,30 @@ from tqdm import tqdm
 from pathlib import Path
 
 
+def get_session_time_shift(data: dict) -> pd.Timedelta:
+    """Return the offset needed to align device timestamps to SessionEndDate.
+    
+    Returns NaT if SessionEndDate is missing or empty, which signals that the
+    time drift is unknown but should be treated as 0 during arithmetic operations.
+    """
+    device_end = pd.Timestamp(data["DeviceInformation"]["Final"]["DeviceDateTime"])
+    session_end = data.get("SessionEndDate")
+    if session_end is None or session_end == "":
+        return pd.NaT
+
+    tablet_end = pd.Timestamp(session_end)
+    return pd.to_timedelta(device_end - tablet_end)
+
+
+def shift_timestamp(value, time_shift: pd.Timedelta):
+    if value is None or value == "":
+        return None
+    # If time_shift is NaT (missing SessionEndDate), treat it as 0
+    if pd.isna(time_shift):
+        return pd.Timestamp(value)
+    return pd.Timestamp(value) - time_shift
+
+
 @dataclass
 class StimGroupSetting:
     start_time: pd.Timestamp  # Session start time
@@ -158,12 +182,14 @@ class FileStimGroupSettings:
         self.active_group_history = pd.concat(result_rows, ignore_index=True)
 
     def _get_group_changes(self, data: dict):
+        active_group_changes = []
         if diag := data.get("DiagnosticData"):
             events = diag.get("EventLogs", [])
+            time_shift = get_session_time_shift(data)
 
             active_group_changes = [
                 {
-                    "time": pd.Timestamp(event["DateTime"]),
+                    "time": shift_timestamp(event["DateTime"], time_shift),
                     "old_group": event["OldGroupId"].removeprefix("GroupIdDef."),
                     "new_group": event["NewGroupId"].removeprefix("GroupIdDef."),
                 }
@@ -172,7 +198,9 @@ class FileStimGroupSettings:
             ]
 
         self.group_changes = (
-            pd.DataFrame(active_group_changes)
+            pd.DataFrame(
+                active_group_changes, columns=["time", "old_group", "new_group"]
+            )
             .sort_values("time")
             .reset_index(drop=True)
         )
@@ -195,14 +223,16 @@ class FileStimGroupSettings:
 
     def _get_group_settings_from_js(self, data: dict):
         # Note: I'm not doing any location check, I'm taking groups from any location
+        time_shift = get_session_time_shift(data)
 
         # ! DeviceInformation is only for the last clinical session
-        self.start_time = pd.Timestamp(
-            data["DeviceInformation"]["Initial"]["DeviceDateTime"]
-        )
-        self.end_time = pd.Timestamp(
-            data["DeviceInformation"]["Final"]["DeviceDateTime"]
-        )
+        session_end = data.get("SessionEndDate")
+        if session_end in (None, ""):
+            self.start_time = pd.NaT
+            self.end_time = pd.NaT
+        else:
+            self.start_time = shift_timestamp(session_end, time_shift)
+            self.end_time = shift_timestamp(session_end, time_shift)
 
         # ! "Groups" is also only for the last session
         # self.initial_settings = pd.DataFrame(
@@ -232,7 +262,7 @@ class FileStimGroupSettings:
         if "GroupHistory" not in data:
             raise ValueError("No GroupHistory found in data")
         for session in data["GroupHistory"]:
-            session_date = pd.Timestamp(session["SessionDate"])
+            session_date = shift_timestamp(session["SessionDate"], time_shift)
             for group in session["Groups"]:
                 group_settings: list[StimGroupSetting] = self._process_group(group)
                 for setting in group_settings:
@@ -526,12 +556,10 @@ class PatientStimSettingHistory:
                     location, self.pt_id, hemisphere
                 )
 
-            start_time = pd.Timestamp(
-                data["DeviceInformation"]["Initial"]["DeviceDateTime"]
-            )
-            end_time = pd.Timestamp(
-                data["DeviceInformation"]["Final"]["DeviceDateTime"]
-            )
+            time_shift = get_session_time_shift(data)
+            start_time = pd.Timestamp(data["SessionDate"])
+            session_end = data.get("SessionEndDate")
+            end_time = pd.NaT if session_end in (None, "") else pd.Timestamp(session_end)
             interval = Interval(start_time, end_time)
             file_settings = []
             for state in ["Initial", "Final"]:
@@ -679,7 +707,7 @@ class PatientStimSettingHistory:
             try:
                 for event in data["DiagnosticData"]["EventLogs"]:
                     if event["ParameterTrendId"] == "ParameterTrendIdDef.ActiveGroup":
-                        dt = pd.Timestamp(event["DateTime"])
+                        dt = shift_timestamp(event["DateTime"], time_shift)
                         new_group = event["NewGroupId"].removeprefix("GroupIdDef.")
                         if (
                             self.group_history.get(dt) is not None
