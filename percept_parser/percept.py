@@ -232,15 +232,15 @@ class PerceptParser:
             )
 
         #  Warn about samples that fell into invalid periods, if thats even possible
-        invalid_samples = samples_with_group[~samples_with_group["is_valid"]]
-        if not invalid_samples.empty:
-            n_invalid = len(invalid_samples)
-            total = len(samples_with_group)
-            warnings.warn(
-                f"{n_invalid}/{total} samples ({100 * n_invalid / total:.1f}%) fell into "
-                f"INVALID group periods (group switched to undefined configuration). "
-                f"These samples dont have defined settings."
-            )
+        # invalid_samples = samples_with_group[~samples_with_group["is_valid"]]
+        # if not invalid_samples.empty:
+        #     n_invalid = len(invalid_samples)
+        #     total = len(samples_with_group)
+        #     warnings.warn(
+        #         f"{n_invalid}/{total} samples ({100 * n_invalid / total:.1f}%) fell into "
+        #         f"INVALID group periods (group switched to undefined configuration). "
+        #         f"These samples dont have defined settings."
+        #     )
 
         # Drop uninsteresting columns
         samples_with_group = samples_with_group.set_index("Time").drop(
