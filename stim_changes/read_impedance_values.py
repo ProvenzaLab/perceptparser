@@ -45,7 +45,7 @@ else:
     df_impedance["Electrode2"] = df_impedance["Electrode2"].apply(lambda x: x.split(".")[1])
     df_impedance["Electrode1"] = df_impedance["Electrode1"].apply(lambda x: x.split(".")[1])
 
-    df_r_bip = df_impedance.query("Hemisphere == 'Right' and type == 'Bipolar'")
+    df_r_bip = df_impedance.query("type == 'Bipolar'")
 
     df_r_bip_filtered = df_r_bip.query(
         "Electrode1 == 'SenSight_0' and Electrode2.str.contains('2')",
@@ -58,16 +58,21 @@ else:
     # sort by session date
     df_r_bip_filtered = df_r_bip_filtered.sort_values(by="SessionDate")
     df_r_bip_filtered["pair"] = df_r_bip_filtered.apply(lambda row: f"{row['Electrode1']}-{row['Electrode2']}", axis=1)
+    df_r_bip_filtered.to_csv("stim_changes/impedance_values_bipolar.csv", index=False)
 
     plt.figure(figsize=(15, 10))
-    for pair in df_r_bip_filtered["pair"].unique():
-        pair_data = df_r_bip_filtered[df_r_bip_filtered["pair"] == pair]
-        plt.plot(pd.to_datetime(pair_data["SessionDate"]), pair_data["ResultValue"], label=f"Pair {pair}", marker="o", linestyle="-", markersize=4)
-    plt.xlabel("Session Date")
-    plt.ylabel("Impedance (Ohms)")
-    plt.title("Impedance Values Over Time for Each Electrode Pair (Right Hemisphere, Bipolar)")
-    plt.legend()
-    plt.savefig("stim_changes/impedance_values_over_time_bipolar_right.pdf")
+    for hemisphere in df_r_bip_filtered["Hemisphere"].unique():
+        plt.subplot(2, 1, 1 if hemisphere == "Right" else 2)
+        for pair in df_r_bip_filtered["pair"].unique():
+            pair_data = df_r_bip_filtered[df_r_bip_filtered["pair"] == pair].query(f"Hemisphere == '{hemisphere}'")
+            plt.plot(pd.to_datetime(pair_data["SessionDate"]), pair_data["ResultValue"], label=f"Pair {pair}", marker="o", linestyle="-", markersize=4)
+        plt.xlabel("Session Date")
+        plt.ylabel("Impedance (Ohms)")
+        plt.title(f"Impedance Values Over Time for {hemisphere} Hemisphere")
+        plt.legend()
+    plt.savefig("stim_changes/impedance_values_over_time_bipolar.pdf")
+
+
 
 
     df_impedance["Contact"] = df_impedance["Electrode2"].apply(lambda x: x.split(".")[1])
