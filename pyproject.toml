@@ -15,7 +15,10 @@ dependencies = [
     "mne>=1.9.0",
     "numpy>=2.3.0",
     "pynwb>=3.0.0",
+    "scikit-learn>=1.9.0",
     "scipy>=1.15.3",
+    "seaborn>=0.13.2",
+    "specparam>=2.0.0rc7",
     "tqdm>=4.67.1",
 ]
 [tool.setuptools]

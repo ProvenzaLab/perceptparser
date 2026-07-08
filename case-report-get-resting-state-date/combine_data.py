@@ -146,6 +146,18 @@ for date, df in tqdm(d_left.items()):
     )
     psds_right[date] = (f, Pxx)
 
+psd_rs = {
+    "psds_left": psds_left,
+    "psds_right": psds_right,
+    "madrs": madrs,
+    "NBU_visits": NBU_visits,
+    "channel_name_left": channel_name_left,
+    "channel_name_right": channel_name_right,
+}
+with open("psd_rs.pkl", "wb") as f:
+    import pickle
+    pickle.dump(psd_rs, f)
+
 # plot each psd, in separate left and right plots, log transformed, color-code by date
 
 for FULL in [False, True]:
