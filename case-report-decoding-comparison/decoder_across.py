@@ -3,23 +3,68 @@ import os
 from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
-from sklearn import linear_model
+from sklearn import linear_model, ensemble
 import numpy as np
 from sklearn import metrics
 from sklearn.decomposition import PCA
+from sklearn.svm import SVR
 
-df_audio = pd.read_csv("case-report-decoding-comparison/mean_fau_features_per_date.csv")
+
+# SELECTED Audio features form Mattson
+audio_features = [
+"F0semitoneFrom27.5Hz_sma3nz_amean",
+"F0semitoneFrom27.5Hz_sma3nz_stddevNorm",
+"F0semitoneFrom27.5Hz_sma3nz_pctlrange0-2",
+"F0semitoneFrom27.5Hz_sma3nz_meanRisingSlope",
+"F0semitoneFrom27.5Hz_sma3nz_meanFallingSlope",
+"F0semitoneFrom27.5Hz_sma3nz_stddevFallingSlope",
+"F1frequency_sma3nz_amean",
+"F1frequency_sma3nz_stddevNorm",
+"F1bandwidth_sma3nz_amean",
+"F1bandwidth_sma3nz_stddevNorm",
+"F2frequency_sma3nz_amean",
+"F2frequency_sma3nz_stddevNorm",
+"F2bandwidth_sma3nz_amean",
+"F2bandwidth_sma3nz_stddevNorm",
+"F3frequency_sma3nz_amean",
+"F3frequency_sma3nz_stddevNorm",
+"F3bandwidth_sma3nz_amean",
+"F3bandwidth_sma3nz_stddevNorm",
+"VoicedSegmentsPerSec",
+"MeanVoicedSegmentLengthSec",
+"StddevVoicedSegmentLengthSec",
+"MeanUnvoicedSegmentLength",
+"StddevUnvoicedSegmentLength",
+"valence",
+"arousal",
+"dominance",
+]
+
+# Mean FAU's per session
+df_video_allFAU = pd.read_csv("case-report-decoding-comparison/mean_fau_features_per_date.csv")
+df_video_allFAU["date"] = pd.to_datetime(df_video_allFAU["date"], format="%Y-%m-%d")
+# drop MADRS column from df_video_allFAU
+df_video_allFAU = df_video_allFAU.drop(columns=["MADRS"])
+
+# Mean Audio features per session
+df_audio = pd.read_csv("case-report-decoding-comparison/mean_audio_features_per_date.csv")
 df_audio["date"] = pd.to_datetime(df_audio["date"], format="%Y-%m-%d")
 
-df_video = pd.read_csv("case-report-decoding-comparison/mean_audio_features_per_date.csv")
-df_video["date"] = pd.to_datetime(df_video["date"], format="%Y-%m-%d")
+# Grace computed time-spent in kmeans FAU cluster
+df_video = pd.read_csv("/scratch/timonmerk/get_data_NBU/perceptparser/case-report-decoding-comparison/video_loocv_cluster_prop_date_units.csv")
+df_video = df_video.drop(columns=["n_csv_in_date", "n_frames_total", "env", "unit_id"])
+df_video["date"] = pd.to_datetime(df_video["date"], format="%Y%m%d")
+
+# potentially merge mean FAU and time-spent in kmenas FAU cluster features
+# merge df_video_allFAU and df_video on date
+#df_video = pd.merge(df_video, df_video_allFAU, on="date", how="inner")
 
 df_neural = pd.read_csv("psd_specparam_features_0_40Hz.csv")
 df_neural["date"] = pd.to_datetime(df_neural["date"], format="%Y_%m_%d")
 df_neural = df_neural.rename(columns={"madrs": "MADRS"})
 df_neural_r = df_neural[df_neural["hemisphere"].str.lower() == "right"].copy()
 df_neural_r = df_neural_r.drop(columns=["hemisphere", "nbu_visit", "channel_name"])
-#neural_features_use = ["raw_low_beta", "raw_high_beta", "aperiodic_offset"]
+#neural_features_use = ["aperiodic_offset", "aperiodic_exponent", "ap_theta", "ap_alpha", "ap_low_beta", "ap_high_beta", ]
 #df_neural_r = df_neural_r[["date", "MADRS"] + neural_features_use].copy()
 
 def run_loso(
@@ -52,6 +97,10 @@ def run_loso(
             X_test_use = pca.transform(X_test_scaled)
 
         model = linear_model.Ridge(alpha=1.0)
+        model = linear_model.LinearRegression()
+        model = linear_model.Lasso(alpha=0.1)
+        #model = ensemble.RandomForestRegressor(n_estimators=10, random_state=42)
+        #model = SVR(kernel="rbf", C=1.0, epsilon=0.1)
         model.fit(X_train_use, y_train)
         y_pred.append(model.predict(X_test_use)[0])
 
@@ -82,16 +131,32 @@ modality_dfs["Neural + Video"] = df_neural_video
 modality_dfs["Neural + Audio + Video"] = df_neural_audio_video
 
 metrics_by_pca = {}
+best_result = {
+    "r2": -np.inf,
+    "modality": None,
+    "use_pca": None,
+    "pred_df": None,
+}
+
 for use_pca in [False, True]:
     metrics_rows = []
     for modality_name, modality_df in modality_dfs.items():
-        _, corr, r2_, mae, mse = run_loso(
+        df_pred, corr, r2_, mae, mse = run_loso(
             modality_df,
             modality_df.columns.difference(["date", "MADRS"]),
             "MADRS",
             use_pca=use_pca,
             n_components=2,
         )
+
+        if r2_ > best_result["r2"]:
+            best_result = {
+                "r2": r2_,
+                "modality": modality_name,
+                "use_pca": use_pca,
+                "pred_df": df_pred.copy(),
+            }
+
         metrics_rows.append(
             {
                 "Modality": modality_name,
@@ -111,7 +176,7 @@ df_metrics_combined = pd.concat(
     names=["Condition"],
 ).reset_index()
 df_metrics_combined.to_csv(
-    "case-report-decoding-comparison/decoding_metrics_across_modalities_neural.csv",
+    "case-report-decoding-comparison/decoding_metrics_across_modalities_neural_limited.csv",
     index=False,
 )
 
@@ -135,4 +200,38 @@ for row_idx, use_pca in enumerate([False, True]):
             ax.set_ylim(0, 1)
 
 plt.tight_layout()
-plt.savefig("case-report-decoding-comparison/decoding_metrics_across_modalities_neural.pdf")
+plt.savefig("case-report-decoding-comparison/decoding_metrics_across_modalities_neural_limited.pdf")
+
+
+# Plot the best-performing setup by R2.
+best_df = best_result["pred_df"].sort_values("date").reset_index(drop=True)
+
+fig_best, (ax_time, ax_reg) = plt.subplots(1, 2, figsize=(14, 5))
+
+ax_time.plot(best_df["date"], best_df["MADRS"], marker="o", label="True MADRS")
+ax_time.plot(best_df["date"], best_df["MADRS_pred"], marker="o", label="Predicted MADRS")
+ax_time.set_xlabel("Time")
+ax_time.set_ylabel("MADRS")
+ax_time.set_title(f"Best Model by R2: {best_result['modality']} | PCA={best_result['use_pca']}")
+ax_time.tick_params(axis="x", rotation=45)
+ax_time.legend()
+
+sns.regplot(
+    data=best_df,
+    x="MADRS",
+    y="MADRS_pred",
+    scatter_kws={"s": 60, "alpha": 0.8},
+    line_kws={"color": "#F58518", "lw": 2},
+    ax=ax_reg,
+)
+
+min_val = min(best_df["MADRS"].min(), best_df["MADRS_pred"].min())
+max_val = max(best_df["MADRS"].max(), best_df["MADRS_pred"].max())
+ax_reg.plot([min_val, max_val], [min_val, max_val], linestyle="--", color="gray", label="Identity")
+ax_reg.set_xlabel("True MADRS")
+ax_reg.set_ylabel("Predicted MADRS")
+ax_reg.set_title(f"Regression (R2={best_result['r2']:.3f})")
+ax_reg.legend()
+
+plt.tight_layout()
+plt.savefig("case-report-decoding-comparison/best_model_timeseries_and_regression.pdf")

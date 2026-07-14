@@ -46,22 +46,36 @@ df_merged["days_since_dbs"] = df_merged["days_since_dbs"].dt.days
 features = ["madrs", "impedance", "teed_right", "raw_high_beta", "aperiodic_offset", "days_since_dbs"]
 n = len(features)
 
+# compute difference to next value for all features (current - next)
+df_plot = df_merged.sort_values("date").copy()
+features_diff = []
+for feature in features:
+    feature_diff = f"{feature}_diff"
+    df_plot[feature_diff] = df_plot[feature] - df_plot[feature].shift(-1)
+    features_diff.append(feature_diff)
+
+
+def safe_pearsonr(df, x_col, y_col):
+    valid = df[[x_col, y_col]].notna().all(axis=1)
+    if valid.sum() < 2:
+        return np.nan, np.nan
+    return stats.pearsonr(df.loc[valid, x_col], df.loc[valid, y_col])
+
 # show for each of the measure also in barplot the correlations each other
 plt.figure(figsize=(10, 10))
-for i, feature1 in enumerate(features):
+for i, feature1 in enumerate(features_diff):
     plt.subplot(3, 2, i + 1)
     corr_coefs = []
     p_values = []
-    for feature2 in features:
+    for feature2 in features_diff:
         if feature1 != feature2:
-            nan_idx_both = df_merged[[feature1, feature2]].notna().all(axis=1)
-            corr_coef, p_value = stats.pearsonr(df_merged[feature1][nan_idx_both], df_merged[feature2][nan_idx_both])
+            corr_coef, p_value = safe_pearsonr(df_plot, feature1, feature2)
             corr_coefs.append(corr_coef)
             p_values.append(p_value)
         else:
             corr_coefs.append(np.nan)
             p_values.append(np.nan)
-    ax = sns.barplot(x=features, y=corr_coefs)
+    ax = sns.barplot(x=features_diff, y=corr_coefs)
     valid_corrs = [corr for corr in corr_coefs if not np.isnan(corr)]
     for bar, corr in zip(ax.patches, valid_corrs):
         x = bar.get_x() + bar.get_width() / 2
@@ -69,53 +83,53 @@ for i, feature1 in enumerate(features):
         y_offset = 0.02 if y >= 0 else -0.02
         va = "bottom" if y >= 0 else "top"
         ax.text(x, y + y_offset, f"{corr:.2f}", ha="center", va=va, fontsize=9)
-    plt.title(f"{feature1}")
+    plt.title(f"{feature1}_diff")
     plt.ylim(-1.1, 1.1)
     plt.xticks(rotation=45)
 plt.tight_layout()
-plt.savefig("stim_changes/correlations_barplot_all_features.pdf")
+plt.savefig("stim_changes/correlations_barplot_all_features_diff.pdf")
 
 plt.figure(figsize=(5*4, 5*4))
-for i, feature1 in enumerate(features):
-    for j, feature2 in enumerate(features):
+for i, feature1 in enumerate(features_diff):
+    for j, feature2 in enumerate(features_diff):
         plt.subplot(n, n, i*n + j + 1)
-        sns.regplot(x=feature1, y=feature2, data=df_merged)
-        corr_coef, p_value = stats.pearsonr(df_merged[feature1], df_merged[feature2])
-        plt.title(f"r={corr_coef:.2f}, p={p_value:.3f}")
+        sns.regplot(x=feature1, y=feature2, data=df_plot)
+        corr_coef, p_value = safe_pearsonr(df_plot, feature1, feature2)
+        plt.title(f"r={corr_coef:.2f}, p={p_value:.3f}_diff")
 plt.tight_layout()
-plt.savefig("stim_changes/correlations_all_features.pdf")
+plt.savefig("stim_changes/correlations_all_features_diff.pdf")
 
 # timeline plot with one left axis (madrs) and multiple right axes (other features)
-timeline_features = ["madrs", "impedance", "teed_right", "raw_high_beta", "aperiodic_offset", "days_since_dbs"]
+timeline_features = features_diff
 timeline_colors = {
-    "madrs": "black",
-    "impedance": "tab:blue",
-    "teed_right": "tab:orange",
-    "raw_high_beta": "tab:green",
-    "aperiodic_offset": "tab:red",
-    "days_since_dbs": "tab:purple",
+    "madrs_diff": "black",
+    "impedance_diff": "tab:blue",
+    "teed_right_diff": "tab:orange",
+    "raw_high_beta_diff": "tab:green",
+    "aperiodic_offset_diff": "tab:red",
+    "days_since_dbs_diff": "tab:purple",
 }
 
-df_timeline = df_merged.sort_values("date").copy()
+df_timeline = df_plot.sort_values("date").copy()
 
 fig, ax_left = plt.subplots(figsize=(14, 7))
 
-# left axis: MADRS
+# left axis: MADRS diff
 line_left, = ax_left.plot(
     df_timeline["date"],
-    df_timeline["madrs"],
-    color=timeline_colors["madrs"],
+    df_timeline["madrs_diff"],
+    color=timeline_colors["madrs_diff"],
     marker="o",
     linewidth=2,
-    label="madrs",
+    label="madrs_diff",
 )
-ax_left.set_ylabel("madrs", color=timeline_colors["madrs"])
-ax_left.tick_params(axis="y", labelcolor=timeline_colors["madrs"])
+ax_left.set_ylabel("madrs_diff", color=timeline_colors["madrs_diff"])
+ax_left.tick_params(axis="y", labelcolor=timeline_colors["madrs_diff"])
 ax_left.set_xlabel("date")
 ax_left.grid(True, axis="x", alpha=0.25)
 
 # right axes: all remaining features, each with its own axis
-right_features = [f for f in timeline_features if f != "madrs"]
+right_features = [f for f in timeline_features if f != "madrs_diff"]
 right_axes = []
 right_lines = []
 
@@ -142,7 +156,7 @@ all_lines = [line_left] + right_lines
 all_labels = [line.get_label() for line in all_lines]
 ax_left.legend(all_lines, all_labels, loc="upper left", frameon=True)
 
-plt.title("Timeline of MADRS, impedance, TEED, neural and time features")
+plt.title("Timeline of MADRS, impedance, TEED, neural and time features_diff")
 fig.subplots_adjust(right=0.78)
 plt.tight_layout()
-plt.savefig("stim_changes/timeline_multi_axis_features.pdf")
+plt.savefig("stim_changes/timeline_multi_axis_features_diff.pdf")

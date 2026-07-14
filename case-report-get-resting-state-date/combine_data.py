@@ -27,6 +27,15 @@ d_visits["2026_05_12"] = df_segments_NBU.loc["2026-05-12"]
 d_visits["2026_06_10"] = pd.read_csv("/scratch/timonmerk/get_data_NBU/perceptparser/Jamail_rs_trbd001/Report_Json_Session_Report_20260610T112955/BrainSenseTimeDomain_2026-06-10_15-33-18_15-36-24.csv")
 d_visits["2026_06_15"] = pd.read_csv("/scratch/timonmerk/get_data_NBU/perceptparser/Jamail_rs_trbd001/Report_Json_Session_Report_20260615T132557/BrainSenseTimeDomain_2026-06-15_16-09-56_16-13-13.csv")
 
+csv_visit_time_points = []
+for date, df in d_visits.items():
+    if "Time" in df.columns:
+        csv_visit_time_points.append((date, df["Time"].min(), df["Time"].max()))
+    else:
+        csv_visit_time_points.append((date, df.index.min(), df.index.max()))
+df_visit_time_points = pd.DataFrame(csv_visit_time_points, columns=["date", "start_time", "end_time"])
+df_visit_time_points.to_csv("case-report-get-resting-state-date/visit_time_points.csv", index=False)
+
 NBU_visits = {
     "2025_06_03" : True,
     "2025_06_04" : True,

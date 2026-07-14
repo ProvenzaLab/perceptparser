@@ -6,13 +6,14 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 
 READ_ = False
+patient = "TRBD001"
 
 if READ_:
-    json_files = [f for f in os.listdir("/mnt/datalake/data/TRBD-53761/TRBD001/LFP/R") if f.endswith(".json")]
+    json_files = [f for f in os.listdir(f"/mnt/datalake/data/TRBD-53761/{patient}/LFP/R") if f.endswith(".json")]
 
     impedance_values = []
     for json_file in tqdm(json_files):
-        file_path = os.path.join("/mnt/datalake/data/TRBD-53761/TRBD001/LFP/R", json_file)
+        file_path = os.path.join(f"/mnt/datalake/data/TRBD-53761/{patient}/LFP/R", json_file)
         with open(file_path, "r") as f:
             data = json.load(f)
             session_date = data["SessionDate"]
@@ -37,10 +38,10 @@ if READ_:
                             imp_entry["type"] = "Bipolar"
                             impedance_values.append(imp_entry)
     df_impedance = pd.DataFrame(impedance_values)
-    df_impedance.to_csv("stim_changes/impedance_values.csv", index=False)
+    df_impedance.to_csv(f"stim_changes/impedance_values_{patient}.csv", index=False)
 
 else:
-    df_impedance = pd.read_csv("stim_changes/impedance_values.csv")
+    df_impedance = pd.read_csv(f"stim_changes/impedance_values_{patient}.csv")
     df_impedance["Hemisphere"] = df_impedance["Hemisphere"].apply(lambda x: x.split(".")[1])
     df_impedance["Electrode2"] = df_impedance["Electrode2"].apply(lambda x: x.split(".")[1])
     df_impedance["Electrode1"] = df_impedance["Electrode1"].apply(lambda x: x.split(".")[1])
@@ -58,7 +59,7 @@ else:
     # sort by session date
     df_r_bip_filtered = df_r_bip_filtered.sort_values(by="SessionDate")
     df_r_bip_filtered["pair"] = df_r_bip_filtered.apply(lambda row: f"{row['Electrode1']}-{row['Electrode2']}", axis=1)
-    df_r_bip_filtered.to_csv("stim_changes/impedance_values_bipolar.csv", index=False)
+    df_r_bip_filtered.to_csv(f"stim_changes/impedance_values_bipolar_{patient}.csv", index=False)
 
     plt.figure(figsize=(15, 10))
     for hemisphere in df_r_bip_filtered["Hemisphere"].unique():
@@ -68,9 +69,10 @@ else:
             plt.plot(pd.to_datetime(pair_data["SessionDate"]), pair_data["ResultValue"], label=f"Pair {pair}", marker="o", linestyle="-", markersize=4)
         plt.xlabel("Session Date")
         plt.ylabel("Impedance (Ohms)")
-        plt.title(f"Impedance Values Over Time for {hemisphere} Hemisphere")
+        plt.title(f"Impedance Values Over Time for {hemisphere} Hemisphere\nPatient: {patient}")
         plt.legend()
-    plt.savefig("stim_changes/impedance_values_over_time_bipolar.pdf")
+    plt.tight_layout()
+    plt.savefig(f"stim_changes/impedance_values_over_time_bipolar_{patient}.pdf")
 
 
 
@@ -88,4 +90,4 @@ plt.xlabel("Session Date")
 plt.ylabel("Impedance (Ohms)")
 plt.title("Impedance Values Over Time for Each Contact")
 plt.legend()
-plt.savefig("stim_changes/impedance_values_over_time.pdf")
+plt.savefig(f"stim_changes/impedance_values_over_time_{patient}.pdf")
