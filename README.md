@@ -35,3 +35,28 @@ dir_name = os.path.basename(filename)[:-len(".json")]
 # Parse all content and save it to the specified directory
 parser.parse_all(out_path=dir_name)
 ```
+
+For pulsatile artifacts in time-domain recordings, select one of two independent
+options: `clean_pulsatile_artifacts=True` masks detected intervals with `NaN`,
+or `subtract_pulsatile_artifacts=True` subtracts an amplitude-fitted pulse
+template from the detected intervals while retaining finite samples. The two
+options are mutually exclusive and can each be combined with either ECG
+removal method.
+
+Both modes use a PulsAr-inspired detector: a 0.5–30 Hz filter, an
+autocorrelation RMS threshold of 0.081 measured over lags from 1–10 seconds,
+50–120 bpm pulse intervals with at most 100 ms median absolute deviation, and
+template cross-correlation. Autocorrelation peaks are searched out to 30
+seconds (or half the segment length when shorter) to make the periodicity
+estimate more robust when longer recordings are available. In subtraction mode,
+the template is averaged from matched events in each channel and fitted
+independently to each event. Segments shorter than 20 seconds are left unchanged. In both pulsatile modes the first 10 seconds of every time-domain dataframe are set to NaN (start-up transient) before detection.
+
+```python
+parser = PerceptParser(
+    filename,
+    ecg_method="template",
+    subtract_pulsatile_artifacts=True,
+)
+parser.parse_all(out_path=dir_name, plot=True)
+```

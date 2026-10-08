@@ -14,6 +14,7 @@ from .ecg_suppression import (
     TemplateSubtractionConfig,
     PerceiveToolboxConfig,
 )
+from .pulsatile_rejection import PulsatileArtifactRejector, lowpass_dataframe
 
 
 class PerceptParser:
@@ -23,6 +24,9 @@ class PerceptParser:
         verbose: bool = False,
         ecg_method: Optional[str] = None,
         ecg_params: Optional[dict] = None,
+        clean_pulsatile_artifacts: bool = False,
+        subtract_pulsatile_artifacts: bool = False,
+        lowpass_hz: Optional[float] = None,
     ):
         """
         Parses Percept JSON reports into pandas DataFrames.
@@ -39,9 +43,33 @@ class PerceptParser:
         ecg_params : dict, optional
             Dictionary of parameters to pass to the ECG removal configuration.
             See `TemplateSubtractionConfig` and `PerceiveToolboxConfig` for available options.
+        clean_pulsatile_artifacts : bool, optional
+            If True, mask detected pulsatile artifact intervals with NaN in
+            time-domain recordings. Mutually exclusive with
+            subtract_pulsatile_artifacts. Default is False.
+        subtract_pulsatile_artifacts : bool, optional
+            If True, estimate and subtract a fitted pulsatile template from
+            detected intervals in time-domain recordings. Mutually exclusive
+            with clean_pulsatile_artifacts. Default is False.
+        lowpass_hz : float, optional
+            If set, low-pass filter time-domain recordings at this cutoff
+            before any ECG or pulsatile artifact processing. Default is None.
         """
+        if clean_pulsatile_artifacts and subtract_pulsatile_artifacts:
+            raise ValueError(
+                "Choose either clean_pulsatile_artifacts or "
+                "subtract_pulsatile_artifacts, not both"
+            )
+
         self.filename = filename
         self.verbose = verbose
+        self.subtract_pulsatile_artifacts = subtract_pulsatile_artifacts
+        self.lowpass_hz = lowpass_hz
+        self.pulsatile_artifact_rejector = (
+            PulsatileArtifactRejector()
+            if clean_pulsatile_artifacts or subtract_pulsatile_artifacts
+            else None
+        )
 
         self.ecg_remover = None
         if ecg_method:
@@ -543,6 +571,13 @@ class PerceptParser:
                 index="Time", columns="Channel", values="Data"
             )
 
+            if self.lowpass_hz:
+                df_concat = lowpass_dataframe(
+                    df_concat,
+                    self.js[str_timedomain][idx_package_chs[0]]["SampleRateInHz"],
+                    self.lowpass_hz,
+                )
+
             if self.ecg_remover is not None:
                 try:
                     # Get fs from the first package in this stream/session
@@ -560,6 +595,24 @@ class PerceptParser:
                     df_concat = self.ecg_remover.clean(df_concat, fs)
                 except Exception as e:
                     print(f"Error applying ECG removal: {e}")
+
+            if self.pulsatile_artifact_rejector is not None:
+                fs = self.js[str_timedomain][idx_package_chs[0]]["SampleRateInHz"]
+                operation = (
+                    "subtracting"
+                    if self.subtract_pulsatile_artifacts
+                    else "masking"
+                )
+                if self.verbose:
+                    print(
+                        f"Pulsatile artifact {operation} in stream {package_idx}, fs={fs}"
+                    )
+                if self.subtract_pulsatile_artifacts:
+                    df_concat = self.pulsatile_artifact_rejector.subtract(
+                        df_concat, fs
+                    )
+                else:
+                    df_concat = self.pulsatile_artifact_rejector.clean(df_concat, fs)
 
             df_concat.attrs["TimeShift"] = self.time_drift
 
